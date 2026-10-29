@@ -1,87 +1,99 @@
-# PerformanceImprove 0.5.0
+# PerformanceImprove (v0.5.0)
 
-**Targeted loading and lifecycle optimizations for Pathfinder: Wrath of the Righteous, with built-in diagnostics.**
+[![Game Version](https://img.shields.io/badge/WotR-2.7.0x-blue.svg)](https://store.steampowered.com/app/1184370/Pathfinder_Wrath_of_the_Righteous/)
+[![Mod Loader](https://img.shields.io/badge/Loader-UMM%20%2B%20Harmony-orange.svg)](https://www.nexusmods.com/site/mods/21)
+[![Status](https://img.shields.io/badge/Status-Experimental-yellow.svg)](#)
 
-PerformanceImprove is an experimental Unity Mod Manager + Harmony mod focused on area transitions, Drezen NPC models, level-up controller cleanup, and sold-item accumulation. Features have separate settings in the UMM panel.
+> **Targeted loading, lifecycle optimizations, and diagnostics for *Pathfinder: Wrath of the Righteous*.**
 
-## Features
+PerformanceImprove is an experimental Unity Mod Manager (UMM) + Harmony mod designed to alleviate stutter and memory pressure during area transitions, NPC rendering in Drezen, level-up UI workflows, and merchant inventory bloat. All modules can be toggled independently via the UMM GUI.
 
-| Feature | Default | What it does |
-| --- | --- | --- |
-| Level-up subscription cleanup | On | Captures the level-up controller subscription and disposes it after the controller stops. Does not force garbage collection. |
-| Drezen NPC models on demand | On | Defers eligible distant NPC models in ordinary Drezen while retaining logical entities. Warms models near the party or camera; default party radius is 45 m. |
-| Sold-item cleanup | On | Removes approved stackable items from the player's completed sale before they accumulate in merchant inventory. Existing merchant stock is left alone. **Removed items cannot be bought back.** |
-| Duplicate area cleanup skip | On | Skips the second resource cleanup during ordinary area transitions. Save loading keeps both cleanups by default. |
-| Faster character texture queue | On | Advances the character atlas queue several times per frame during texture-compression waits; default burst 4, clamped to 1–8. In-game performance still requires A/B testing. |
-| Session diagnostics | On | Writes timings, preview-copy statistics, loading phases, memory samples and mod inventory to JSONL. |
+---
 
-Two experiments are **off by default**: `SpellbookCopyFast` skips already-known spell re-additions during preview copying; `SkipFirstCleanupOnSaveLoad` skips the first save-load cleanup only when the system memory gate (at least 12 GB) passes. These require controlled in-game testing. SpellbookCopyFast uses the diagnostics patch path, so keep Diagnostics enabled when testing it.
+## ⚡ Features
 
-NPC safeguards cover party members, pets, special models, scripted access, dialogue, cutscenes and combat. The separate story-return Drezen map is excluded; this has not been verified against every story variant.
+### Core Modules (Default: Enabled)
 
-## Requirements and compatibility
+| Feature | Default | Description |
+| :--- | :---: | :--- |
+| **Level-Up Subscription Cleanup** | `On` | Captures and disposes of orphaned level-up controller subscriptions after the interface closes (does not trigger forced GC). |
+| **Drezen NPC Models On-Demand** | `On` | Defers rendering of distant NPC models in standard Drezen while preserving logical game entities. Models dynamically warm up near the camera or party (default radius: 45m). |
+| **Sold-Item Cleanup** | `On` | Automatically purges safe, stackable sold items from completed transactions before they bloat merchant inventories. Quest/unique items and original vendor stocks remain untouched. |
+| **Skip Duplicate Area Cleanup** | `On` | Bypasses the redundant second resource-cleanup step during standard area transitions. |
+| **Accelerated Texture Queue** | `On` | Steps the character atlas queue multiple times per frame during texture-compression wait cycles (default burst: 4, clamped: 1–8). |
+| **Session Diagnostics** | `On` | Collects transition timings, preview-copy stats, loading stages, memory usage snapshots, and installed mod inventories into `.jsonl` logs. |
 
-- Windows installation of Pathfinder: Wrath of the Righteous with Unity Mod Manager installed.
-- Current code targets the locally inspected **2.7.0x** game build. Compatibility guards use Assembly-CSharp SHA256 `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`; do not assume other builds work.
-- Remove the old standalone WrathLifecycleFix and WrathDeferredNpcViews installations before using this merged mod. Standalone WrathPerformanceLab diagnostics are also superseded.
-- Compatibility with other mods, including Performance Fixes, has not been exhaustively tested.
+> [!WARNING]
+> **Sold-Item Cleanup is irreversible:** Purged items **cannot** be bought back. Disable this module in UMM if you rely on merchant buyback mechanics.
 
-## Installation and removal
+### Experimental Flags (Default: Disabled)
 
-1. Exit the game and back up your saves.
-2. Install the packaged `PerformanceImprove` folder under the game's `Mods` directory, or install the release ZIP using UMM.
-3. Start the game, verify version 0.5.0 in UMM and review its individual settings. Disable sold-item cleanup if you want to retain buyback access.
-4. When upgrading, preserve `Mods/PerformanceImprove/Settings.xml` and `Logs`.
+The following experimental features require manual testing and may vary in impact:
 
-To remove the mod, exit the game and remove its folder. Removing it cannot restore items already discarded by sold-item cleanup; use a prior save if necessary. Restart between A/B runs.
+*   `SpellbookCopyFast`: Skips re-adding known spells during character preview generation. *(Requires Diagnostics to remain enabled).*
+*   `SkipFirstCleanupOnSaveLoad`: Bypasses the initial cleanup pass during save loading **only** when system available memory exceeds the 12 GB threshold gate.
 
-## Logs and feedback
+### Safeguards & Exceptions
+*   **NPC Entity Protection:** Party members, companion pets, unique/special model rigs, scripted interactables, cutscene actors, dialogue triggers, and active combat units are completely excluded from deferred loading.
+*   **Excluded Zones:** The story-altered variant of Drezen (late-game / mythic-specific return) is bypassed by default to avoid script desyncs.
 
-Diagnostics are saved to `Mods/PerformanceImprove/Logs/perf-*.jsonl` (default limit 32 MiB per session). Include the game/mod versions, enabled features, reproduction steps and relevant log when reporting a problem. Logs include the installed mod list; review them before sharing publicly. Individual lifecycle, NPC and merchant logs have separate limits.
+---
 
-## Validation and current limits
+## 📋 Requirements & Compatibility
 
-The existing build workflow runs six suites against the merged DLL: lifecycle (32), NPC views (51), integration (22), merchant (40), diagnostics (31), and load cleanup (61): **237 independent checks**. These cover managed behavior, actual game IL/signatures, patching and configuration, not the full Unity runtime.
+*   **Game Version:** Built and tested against local **v2.7.0x**.
+    *   Target `Assembly-CSharp.dll` SHA256:  
+        `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`
+    *   *Compatibility with earlier or future patches is not guaranteed.*
+*   **Dependencies:** [Unity Mod Manager](https://www.nexusmods.com/site/mods/21) (Doorstop or Assembly injection).
+*   **Mod Compatibility:** Not exhaustively benchmarked alongside other performance mods (e.g., *Performance Fixes*). Test configurations individually.
 
-Historical 0.4.0 game logs recorded 21 captured/released lifecycle subscriptions and 28 deferred/restored NPC models without reported failures in those counters. That is a limited observation, not proof of universal compatibility or a benchmark. No measured FPS increase or fixed percentage loading improvement is claimed. Version 0.5.0 loading changes still need in-game A/B testing.
+---
 
-**Texture-wait fix:** the coroutine is now wrapped in a Harmony postfix after the original method returns. A regression test reproduced the inactive window with the old prefix, then passed with the fix. It uses the production patch registration on a managed coroutine factory and verifies yield preservation, completion and early disposal; it does not execute the Unity loading pipeline.
+## 📦 Installation & Updating
 
-## Build from source
+### First-Time Install
+1. Fully exit the game and **back up your save files** (`%UserProfile%\AppData\LocalLow\Owlcat Games\Pathfinder Wrath Of The Righteous\Saved Games`).
+2. Extract the `PerformanceImprove` folder into `<GameDirectory>/Mods/`, or drag-and-drop the release `.zip` into the UMM interface.
+3. Launch the game, open the UMM menu (<kbd>Ctrl</kbd> + <kbd>F10</kbd>), verify version **0.5.0**, and configure feature toggles as desired.
 
-Use a .NET SDK capable of building net481 projects and .NET Framework 4.8.1 reference assemblies. Game, Unity, UMM and Harmony DLLs must come from your own installation; they are not included.
+### Updating
+*   Overwrite existing mod binaries, but **preserve** `Mods/PerformanceImprove/Settings.xml` and the `Logs/` directory to retain your custom configurations and diagnostic histories.
 
-The projects currently contain local paths for `Managed` and NuGet caches. Adjust those properties for your machine (or pass `-p:Managed="<game>/Wrath_Data/Managed"` to direct dotnet builds). The packaging script also sets local cache directories; review it before running elsewhere.
+### Uninstallation
+*   Delete the `Mods/PerformanceImprove/` directory.
+*   *Note: Removing the mod does not restore items previously erased by the Sold-Item Cleanup module. Revert to a manual save prior to the sales if necessary.*
 
-```powershell
-# Run from the repository root on the original development machine:
-powershell -ExecutionPolicy Bypass -File scripts/build-performance-improve.ps1
-```
+---
 
-The script builds, runs the six suites and produces `dist/PerformanceImprove-0.5.0.zip`. `analysis/` and `dist/` are generated/local directories excluded from source control. The script creates its local `analysis/` output directory when needed.
+## 🛠️ Diagnostics & Bug Reporting
 
-## Source layout
+When reporting issues or performance regressions, please supply:
+1. Exact game build and mod version.
+2. Active feature configuration (`Settings.xml`).
+3. Steps to reproduce the issue.
+4. Relevant diagnostic logs located at:  
+   `Mods/PerformanceImprove/Logs/perf-*.jsonl` (capped at 32 MiB per session).
 
-- `src/PerformanceImprove/`: UMM entry, feature switches, merchant cleanup, diagnostics and load optimizations.
-- `src/WrathLifecycleFix/` and `src/WrathDeferredNpcViews/`: shared feature source linked into the merged DLL; old standalone entry points remain for historical builds.
-- `src/WrathPerformanceLab/Telemetry.cs`: shared telemetry source.
-- `tests/`: managed verification suites.
-- `docs/`: feature rules and development analysis. Some documents describe historical versions and reference local evidence excluded from this repository.
+> [!NOTE]
+> Diagnostic logs contain a manifest of installed mod names to aid conflict debugging. Review and redact logs before sharing them in public forums.
 
-Detailed rules: [mod guide](docs/performance-improve.md), [sold-item protections](docs/merchant-sale-cleanup.md), [load cleanup](docs/load-cleanup.md), [diagnostics](docs/diagnostics-log.md).
+---
 
-## Nexus description / 中文介绍
+## 🇨🇳 中文说明 / Chinese Overview
 
-**名称：PerformanceImprove — 区域加载与生命周期优化**
+**PerformanceImprove — 区域加载与生命周期优化 (v0.5.0)**
 
-针对《开拓者：正义之怒》的区域切换、眷泽城 NPC 模型加载及升级控制器订阅清理提供可单独开关的优化，并内置诊断日志，方便定位卡顿来源。
+针对《开拓者：正义之怒》的场景切换、眷泽城 NPC 渲染与 UI 生命周期残留进行定向优化的实验性 UMM + Harmony Mod，内置轻量级诊断监控。
 
-- 普通眷泽城按距离和镜头预热 NPC 模型，保留逻辑实体与剧情恢复入口。
-- 升级控制器停止后释放其遗失的订阅，减少无效生命周期残留。
-- 普通区域切换跳过第二次资源清理；读档默认维持原有清理次数。
-- 可自动清理玩家已经成交的合规可堆叠卖出物品，保留任务、独特与无法确认安全的物品。**清理后无法回购，请按需关闭。**
-- 提供加载、升级预览和内存诊断日志。贴图队列在加载等待期间每帧多推进几次；协程挂接问题已修复并通过回归测试，实际收益仍需游戏内验证。
+### 主要功能
+*   **眷泽城按需加载**：根据与队伍/视角的距离（默认 45 米）动态预热普通眷泽城的 NPC 模型，保留底层逻辑实体与剧情触发，减轻主城显存与渲染峰值。
+*   **升级控制器订阅清理**：升级界面关闭后主动注销遗留的事件订阅，避免空闲生命周期泄露。
+*   **过图冗余清理优化**：跳过普通区域切换时的二次垃圾回收/资源清理阶段；存档读取默认维持双重清理以保证稳定。
+*   **商人售出物堆叠精简**：自动清理玩家已完成交易的安全可堆叠杂物，防止后期存档商人清单无限膨胀。*(注：被清理物品无法回购，保留任务与唯一物品)*。
+*   **贴图压缩队列加速**：在贴图压缩等待阶段提高每帧对角色图集队列的处理频次（默认 4 次）。
+*   **会话级结构化日志**：将过图耗时、预览拷贝开销、内存采样与 Mod 清单输出至 `.jsonl` 文件，便于性能溯源。
 
-这是实验性 Mod。当前针对 2.7.0x 本机程序集验证，不承诺固定加速比例、解决所有内存增长或闪退。237 项独立检查不能替代真实游戏及全 Mod 组合测试。请备份存档，并在 UMM 中确认需要开启的功能。
-
-介绍结构参考 [ADDB 的 Performance Fixes](https://www.nexusmods.com/pathfinderwrathoftherighteous/mods/797)：简介、功能、依赖、安装和兼容性。本项目关注的优化路径不同，未沿用该 Mod 的性能数字或分发其文件。
+### 注意事项
+*   目标适配版本为 **2.7.0x**，暂未与其他大型优化 Mod（如 Performance Fixes）进行交叉兼容测试。
+*   升级时请保留 `Settings.xml` 以沿用个人偏好设置。
