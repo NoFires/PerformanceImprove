@@ -1,0 +1,9 @@
+{
+  "Id": "WrathLifecycleFix",
+  "DisplayName": "Wrath Lifecycle Fix (Experimental)",
+  "Author": "Local Performance Investigation",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.32.4",
+  "AssemblyName": "WrathLifecycleFix.dll",
+  "EntryMethod": "WrathLifecycleFix.Main.Load"
+}

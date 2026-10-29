@@ -1,0 +1,9 @@
+{
+  "Id": "WrathPerformanceLab",
+  "DisplayName": "Wrath Performance Lab (Diagnostics)",
+  "Author": "Local Performance Investigation",
+  "Version": "0.2.0",
+  "ManagerVersion": "0.32.4",
+  "AssemblyName": "WrathPerformanceLab.dll",
+  "EntryMethod": "WrathPerformanceLab.Main.Load"
+}

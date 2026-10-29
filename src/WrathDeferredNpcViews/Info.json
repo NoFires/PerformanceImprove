@@ -1,0 +1,9 @@
+{
+  "Id": "WrathDeferredNpcViews",
+  "DisplayName": "Wrath Deferred NPC Views (Experimental)",
+  "Author": "Local Performance Investigation",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.32.4",
+  "AssemblyName": "WrathDeferredNpcViews.dll",
+  "EntryMethod": "WrathDeferredNpcViews.Main.Load"
+}

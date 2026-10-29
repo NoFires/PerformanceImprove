@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net481</TargetFramework><LangVersion>latest</LangVersion><Version>0.5.0</Version>
+    <Managed>D:\SteamLibrary\steamapps\common\Pathfinder Second Adventure\Wrath_Data\Managed</Managed>
+    <RestorePackagesPath>E:\Program\Caches\NuGet\packages</RestorePackagesPath>
+    <RestoreSources>https://api.nuget.org/v3/index.json</RestoreSources><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Merchant\ApprovedItems.json" />
+    <Compile Include="..\WrathLifecycleFix\Main.cs;..\WrathLifecycleFix\CaptureRewriter.cs;..\WrathLifecycleFix\SubscriptionLifetime.cs;..\WrathLifecycleFix\GameCompatibility.cs" LinkBase="Features\Lifecycle" />
+    <Compile Include="..\WrathDeferredNpcViews\Main.cs;..\WrathDeferredNpcViews\Policy.cs;..\WrathDeferredNpcViews\WeakWorkSet.cs;..\WrathDeferredNpcViews\ResourceRewriter.cs;..\WrathDeferredNpcViews\WarmupSequence.cs" LinkBase="Features\NpcViews" />
+    <Compile Include="..\WrathPerformanceLab\Telemetry.cs" Link="Shared\Telemetry.cs" />
+    <Reference Include="Assembly-CSharp"><HintPath>$(Managed)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp-firstpass"><HintPath>$(Managed)\Assembly-CSharp-firstpass.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityModManager"><HintPath>$(Managed)\UnityModManager\UnityModManager.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(Managed)\UnityModManager\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Managed)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(Managed)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(Managed)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Owlcat.Runtime.Core"><HintPath>$(Managed)\Owlcat.Runtime.Core.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
+

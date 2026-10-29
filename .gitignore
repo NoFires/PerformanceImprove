@@ -1,0 +1,16 @@
+# Local research, saves, logs, installation backups and generated packages
+/analysis/
+/dist/
+# Local tooling and agent instructions
+/AGENTS.md
+/mcp/
+/skills/
+__pycache__/
+*.pyc
+bin/
+obj/
+.vs/
+.env
+.env.*
+*.user
+*.suo
