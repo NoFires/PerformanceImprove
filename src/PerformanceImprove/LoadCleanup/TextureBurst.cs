@@ -46,7 +46,7 @@ namespace PerformanceImprove.LoadCleanup
                     throw new MissingMethodException("Kingmaker.Visual.CharacterSystem.CharacterAtlasService.Update()");
 
                 harmony = new Harmony(Owner);
-                harmony.Patch(await, prefix: new HarmonyMethod(typeof(TextureBurst), nameof(AwaitPrefix)));
+                harmony.Patch(await, postfix: new HarmonyMethod(typeof(TextureBurst), nameof(AwaitPostfix)));
                 harmony.Patch(update, postfix: new HarmonyMethod(typeof(TextureBurst), nameof(UpdatePostfix)));
                 installed = true;
                 return true;
@@ -83,11 +83,10 @@ namespace PerformanceImprove.LoadCleanup
         }
 
         // Harmony: wrap the coroutine so the burst window is exactly its lifetime.
-        private static bool AwaitPrefix(ref IEnumerator __result)
+        private static void AwaitPostfix(ref IEnumerator __result)
         {
-            if (__result == null) return true;
+            if (__result == null) return;
             __result = Wrap(__result);
-            return false;
         }
 
         private static IEnumerator Wrap(IEnumerator inner)

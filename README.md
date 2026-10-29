@@ -12,7 +12,7 @@ PerformanceImprove is an experimental Unity Mod Manager + Harmony mod focused on
 | Drezen NPC models on demand | On | Defers eligible distant NPC models in ordinary Drezen while retaining logical entities. Warms models near the party or camera; default party radius is 45 m. |
 | Sold-item cleanup | On | Removes approved stackable items from the player's completed sale before they accumulate in merchant inventory. Existing merchant stock is left alone. **Removed items cannot be bought back.** |
 | Duplicate area cleanup skip | On | Skips the second resource cleanup during ordinary area transitions. Save loading keeps both cleanups by default. |
-| Faster character texture queue | On (configured) | Intended to advance the character atlas queue several times per frame during texture-compression waits; default burst 4, clamped to 1–8. **Runtime activation needs verification; see below.** |
+| Faster character texture queue | On | Advances the character atlas queue several times per frame during texture-compression waits; default burst 4, clamped to 1–8. In-game performance still requires A/B testing. |
 | Session diagnostics | On | Writes timings, preview-copy statistics, loading phases, memory samples and mod inventory to JSONL. |
 
 Two experiments are **off by default**: `SpellbookCopyFast` skips already-known spell re-additions during preview copying; `SkipFirstCleanupOnSaveLoad` skips the first save-load cleanup only when the system memory gate (at least 12 GB) passes. These require controlled in-game testing. SpellbookCopyFast uses the diagnostics patch path, so keep Diagnostics enabled when testing it.
@@ -41,11 +41,11 @@ Diagnostics are saved to `Mods/PerformanceImprove/Logs/perf-*.jsonl` (default li
 
 ## Validation and current limits
 
-The existing build workflow runs six suites against the merged DLL: lifecycle (32), NPC views (51), integration (22), merchant (40), diagnostics (31), and load cleanup (56): **232 independent checks**. These cover managed behavior, actual game IL/signatures, patching and configuration, not the full Unity runtime.
+The existing build workflow runs six suites against the merged DLL: lifecycle (32), NPC views (51), integration (22), merchant (40), diagnostics (31), and load cleanup (61): **237 independent checks**. These cover managed behavior, actual game IL/signatures, patching and configuration, not the full Unity runtime.
 
 Historical 0.4.0 game logs recorded 21 captured/released lifecycle subscriptions and 28 deferred/restored NPC models without reported failures in those counters. That is a limited observation, not proof of universal compatibility or a benchmark. No measured FPS increase or fixed percentage loading improvement is claimed. Version 0.5.0 loading changes still need in-game A/B testing.
 
-**Code review finding:** `TextureBurst.AwaitPrefix` is registered as a Harmony prefix and returns immediately when `__result` is null. An IEnumerator result normally is not populated before the original method runs. The intended wrapper may therefore never activate. Existing signature/policy checks do not establish this runtime behavior. The original implementation is retained pending a focused fix and runtime validation.
+**Texture-wait fix:** the coroutine is now wrapped in a Harmony postfix after the original method returns. A regression test reproduced the inactive window with the old prefix, then passed with the fix. It uses the production patch registration on a managed coroutine factory and verifies yield preservation, completion and early disposal; it does not execute the Unity loading pipeline.
 
 ## Build from source
 
@@ -80,8 +80,8 @@ Detailed rules: [mod guide](docs/performance-improve.md), [sold-item protections
 - 升级控制器停止后释放其遗失的订阅，减少无效生命周期残留。
 - 普通区域切换跳过第二次资源清理；读档默认维持原有清理次数。
 - 可自动清理玩家已经成交的合规可堆叠卖出物品，保留任务、独特与无法确认安全的物品。**清理后无法回购，请按需关闭。**
-- 提供加载、升级预览和内存诊断日志。贴图队列加速已实现，但发现协程挂接疑点，需修正验证后再宣称生效。
+- 提供加载、升级预览和内存诊断日志。贴图队列在加载等待期间每帧多推进几次；协程挂接问题已修复并通过回归测试，实际收益仍需游戏内验证。
 
-这是实验性 Mod。当前针对 2.7.0x 本机程序集验证，不承诺固定加速比例、解决所有内存增长或闪退。232 项独立检查不能替代真实游戏及全 Mod 组合测试。请备份存档，并在 UMM 中确认需要开启的功能。
+这是实验性 Mod。当前针对 2.7.0x 本机程序集验证，不承诺固定加速比例、解决所有内存增长或闪退。237 项独立检查不能替代真实游戏及全 Mod 组合测试。请备份存档，并在 UMM 中确认需要开启的功能。
 
 介绍结构参考 [ADDB 的 Performance Fixes](https://www.nexusmods.com/pathfinderwrathoftherighteous/mods/797)：简介、功能、依赖、安装和兼容性。本项目关注的优化路径不同，未沿用该 Mod 的性能数字或分发其文件。

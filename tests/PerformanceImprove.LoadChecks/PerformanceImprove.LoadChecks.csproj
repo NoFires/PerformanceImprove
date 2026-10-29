@@ -7,6 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PerformanceImprove\PerformanceImprove.csproj" />
     <Reference Include="UnityModManager"><HintPath>$(Managed)\UnityModManager\UnityModManager.dll</HintPath></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(Managed)\Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="0Harmony"><HintPath>$(Managed)\UnityModManager\0Harmony.dll</HintPath></Reference>
     <Reference Include="dnlib"><HintPath>$(Managed)\UnityModManager\dnlib.dll</HintPath></Reference>
   </ItemGroup>
 </Project>

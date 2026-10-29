@@ -31,7 +31,7 @@ UMM 标识、显示名称、文件夹与主程序集分别为 `PerformanceImprov
 
 ## 验证边界
 
-构建脚本 `scripts/build-performance-improve.ps1` 对**合并后的 PerformanceImprove.dll**运行原订阅清理 32 项、NPC 功能 51 项、整合 22 项、商人功能 40 项、诊断日志 31 项和加载清理 56 项，共 **232 项**独立检查。新增检查包括 `Game.LoadArea` 六参数签名与 3 个清理调用点、状态机（普通第 2 次跳过、读档默认全保留、实验开关下读档跳第 1 次、12 GB 内存门槛、状态重置）、`Game.AwaitTextureCompression` 的私有 `IEnumerator` 签名、`CharacterAtlasService.Update` 公共签名，以及贴图加速的纯门控规则（窗口内才推进、重入不递归、1–8 上限）。
+构建脚本 `scripts/build-performance-improve.ps1` 对**合并后的 PerformanceImprove.dll**运行原订阅清理 32 项、NPC 功能 51 项、整合 22 项、商人功能 40 项、诊断日志 31 项和加载清理 61 项，共 **237 项**独立检查。新增检查包括 `Game.LoadArea` 六参数签名与 3 个清理调用点、状态机（普通第 2 次跳过、读档默认全保留、实验开关下读档跳第 1 次、12 GB 内存门槛、状态重置）、`Game.AwaitTextureCompression` 的私有 `IEnumerator` 签名、`CharacterAtlasService.Update` 公共签名，以及贴图加速的纯门控规则（窗口内才推进、重入不递归、1–8 上限）。
 
 这些检查包含真实 Harmony、游戏 IL、UniRx 取消路径、弱引用、协程、配置 XML、启停控制与日志格式，但没有执行真实 Unity 加载管线、全 Mod 组合、任务或剧情现场，也没有在游戏内跑过加载清理 A/B。独立检查通过与文件打包完成，不代表已经确认游戏内性能收益。当前游戏程序集哈希保护仍为 `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`。
 
@@ -46,3 +46,6 @@ UMM 标识、显示名称、文件夹与主程序集分别为 `PerformanceImprov
 3. 正常玩，遇到读档/切图卡顿就照常操作即可；诊断日志会自己写到 `Mods\PerformanceImprove\Logs\perf-*.jsonl`。
 4. 想反馈问题，把最新的 `perf-*.jsonl` 发回来，并说明是否开了“贴图加速”和“读档跳过第一次清理”。
 5. 想回退：换回旧文件夹即可；`Settings.xml` 里新增的三个键可以留着或删掉。
+## 2026-10-29 发布前修复
+
+贴图等待协程改用 Harmony postfix 包装原方法返回值，修复 prefix 阶段结果尚为空而未激活加速窗口的问题。新增五项检查，使用实际生产注册在托管协程工厂上复现旧问题并验证修复、yield 保留、正常结束及提前释放。237 项检查通过，仍需真实游戏加载 A/B。

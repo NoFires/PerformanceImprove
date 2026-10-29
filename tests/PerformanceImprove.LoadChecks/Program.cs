@@ -18,6 +18,13 @@ internal static class Program
         Console.WriteLine("PASS " + name);
     }
 
+    private static readonly object textureMarker = new object();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static System.Collections.IEnumerator TextureWait() => TextureWaitBody();
+    private static System.Collections.IEnumerator TextureWaitBody()
+    {
+        yield return textureMarker;
+    }
     private static int Main()
     {
         try
@@ -177,6 +184,32 @@ internal static class Program
             using (var reader = new StringReader(xml)) burstRestored = (Configuration)serializer.Deserialize(reader);
             Check(!burstRestored.FastTextureWait && burstRestored.TextureWaitBurst == 6, "texture burst settings round-trip independently");
 
+            // Exercise the production Harmony registration on a managed coroutine factory.
+            Check(TextureBurst.Initialize(null, true, 4), "texture patches install against the game methods");
+            try
+            {
+                var target = HarmonyLib.AccessTools.Method(typeof(Kingmaker.Game), "AwaitTextureCompression", Type.EmptyTypes);
+                var patches = HarmonyLib.Harmony.GetPatchInfo(target);
+                var testHarmony = new HarmonyLib.Harmony("PerformanceImprove.TextureBurst.Regression");
+                var factory = typeof(Program).GetMethod(nameof(TextureWait), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                foreach (var patch in patches.Prefixes.Where(p => p.owner == TextureBurst.Owner))
+                    testHarmony.Patch(factory, prefix: new HarmonyLib.HarmonyMethod(patch.PatchMethod));
+                foreach (var patch in patches.Postfixes.Where(p => p.owner == TextureBurst.Owner))
+                    testHarmony.Patch(factory, postfix: new HarmonyLib.HarmonyMethod(patch.PatchMethod));
+                try
+                {
+                    var wait = TextureWait();
+                    Check(!TextureBurst.Active, "factory creation leaves burst inactive until iteration");
+                    Check(wait.MoveNext() && TextureBurst.Active && ReferenceEquals(wait.Current, textureMarker), "registered patch activates burst and preserves the original yield");
+                    Check(!wait.MoveNext() && !TextureBurst.Active, "normal coroutine completion clears the burst window");
+                    wait = TextureWait();
+                    wait.MoveNext();
+                    ((IDisposable)wait).Dispose();
+                    Check(!TextureBurst.Active, "early coroutine disposal clears the burst window");
+                }
+                finally { testHarmony.UnpatchAll(testHarmony.Id); }
+            }
+            finally { TextureBurst.Unload(); }
             Console.WriteLine(checks + " checks passed");
             return 0;
         }
