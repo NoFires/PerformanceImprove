@@ -2,10 +2,11 @@
   "Id": "PerformanceImprove",
   "DisplayName": "PerformanceImprove",
   "Author": "Local Performance Investigation",
-  "Version": "0.5.1",
+  "Version": "0.5.2",
   "ManagerVersion": "0.32.4",
   "AssemblyName": "PerformanceImprove.dll",
   "EntryMethod": "PerformanceImprove.Main.Load"
 }
+
 
 

@@ -17,6 +17,8 @@ namespace PerformanceImprove
         public bool Diagnostics = true;
         public bool SkipDuplicateLoadCleanup = true;
         public bool SkipFirstCleanupOnSaveLoad = false;
+        // Skip the TabletopTweaks -117 JSON migration when the file has no TabletopTweaks type names.
+        public bool SkipNoOpSaveUpgrades = true;
         public int DiagnosticsSampleSeconds = 15;
         public bool FastTextureWait = true;
         public int TextureWaitBurst = 4;
@@ -48,6 +50,7 @@ namespace PerformanceImprove
                 configuration.Npc = configuration.Npc ?? new WrathDeferredNpcViews.Settings();
                 LoadFeature.Configure(configuration.SkipFirstCleanupOnSaveLoad);
                 LoadFeature.ConfigureTexture(configuration.FastTextureWait, configuration.TextureWaitBurst);
+                LoadFeature.ConfigureSaveUpgrade(configuration.SkipNoOpSaveUpgrades);
                 diagnostics = new Diagnostics.ProbeHost(entry, configuration.DiagnosticsSampleSeconds, configuration.DiagnosticsMaxMegabytes)
                 { SkipKnownReadd = configuration.SpellbookCopyFast };
                 features = new FeatureGroup(
@@ -67,7 +70,7 @@ namespace PerformanceImprove
                 entry.OnGUI = GUI;
                 entry.OnSaveGUI = e => configuration.Save(e);
                 ReportErrors();
-                entry.Logger.Log("PerformanceImprove 0.5.0: lifecycle cleanup, deferred NPC views, stackable player sale cleanup, area-load cleanup skip, session diagnostics.");
+                entry.Logger.Log("PerformanceImprove 0.5.2: lifecycle cleanup, deferred NPC views, stackable player sale cleanup, area-load cleanup skip, save-upgrade fast path, session diagnostics.");
                 return true;
             }
             catch (Exception ex)
@@ -93,7 +96,7 @@ namespace PerformanceImprove
         }
         private static void GUI(UnityModManager.ModEntry _)
         {
-            GUILayout.Label("PerformanceImprove 0.5.0 — experimental; restart for a clean comparison.");
+            GUILayout.Label("PerformanceImprove 0.5.2 — experimental; restart for a clean comparison.");
             bool lifecycle = GUILayout.Toggle(configuration.LifecycleCleanup, "Level-up subscription cleanup");
             if (lifecycle != configuration.LifecycleCleanup && (!features.Enabled || features.Lifecycle.Set(lifecycle))) configuration.LifecycleCleanup = lifecycle;
             bool npc = GUILayout.Toggle(configuration.DeferredNpcViews, "Drezen NPC models on demand");
@@ -104,8 +107,10 @@ namespace PerformanceImprove
             if (fastTexture != configuration.FastTextureWait) { configuration.FastTextureWait = fastTexture; LoadFeature.ConfigureTexture(fastTexture, configuration.TextureWaitBurst); }
             bool skipSave = GUILayout.Toggle(configuration.SkipFirstCleanupOnSaveLoad, "实验：读档时跳过第一次清理（需 ≥12 GB 内存，默认关）");
             if (skipSave != configuration.SkipFirstCleanupOnSaveLoad) { configuration.SkipFirstCleanupOnSaveLoad = skipSave; LoadFeature.Configure(skipSave); }
+            bool skipUpgrade = GUILayout.Toggle(configuration.SkipNoOpSaveUpgrades, "读档时跳过无效果的 TabletopTweaks 存档升级（内容不含该类型名时）");
+            if (skipUpgrade != configuration.SkipNoOpSaveUpgrades) { configuration.SkipNoOpSaveUpgrades = skipUpgrade; LoadFeature.ConfigureSaveUpgrade(skipUpgrade); }
             GUILayout.Label("普通切换跳第二次清理；贴图加速只在加载等待期间生效。");
-            GUILayout.Label($"已跳过清理：普通 {LoadFeature.Skipped} 次 / 读档 {LoadFeature.SkippedSaveLoad} 次；贴图队列额外推进 {LoadFeature.PumpedTextures} 次");
+            GUILayout.Label($"已跳过清理：普通 {LoadFeature.Skipped} 次 / 读档 {LoadFeature.SkippedSaveLoad} 次；贴图队列额外推进 {LoadFeature.PumpedTextures} 次；跳过无效存档升级 {LoadFeature.SkippedUpgradeFiles} 个文件 / {LoadFeature.SkippedUpgradeMegabytes} MB");
             bool merchant = GUILayout.Toggle(configuration.MerchantSaleCleanup, "自动清理已成交的可堆叠卖出物品（保留独特装备和任务道具）");
             if (merchant != configuration.MerchantSaleCleanup && (!features.Enabled || features.Merchant.Set(merchant))) configuration.MerchantSaleCleanup = merchant;
             GUILayout.Label("清理后无法回购；商人原有库存、非堆叠物品和无法确认的物品保持原样。");
@@ -114,7 +119,7 @@ namespace PerformanceImprove
             if (diagnosticsOn != configuration.Diagnostics && (!features.Enabled || features.Diagnostics.Set(diagnosticsOn))) configuration.Diagnostics = diagnosticsOn;
             bool fast = GUILayout.Toggle(configuration.SpellbookCopyFast, "实验：复制法术书时跳过已学法术（默认关，用于 A/B）");
             if (fast != configuration.SpellbookCopyFast) { configuration.SpellbookCopyFast = fast; if (diagnostics != null) diagnostics.SkipKnownReadd = fast; }
-            GUILayout.Label($"Active: lifecycle={features.Lifecycle.Active}, NPC={features.Npc.Active}, load={features.LoadCleanup.Active}, diagnostics={features.Diagnostics.Active}");
+            GUILayout.Label($"Active: lifecycle={features.Lifecycle.Active}, NPC={features.Npc.Active}, load={features.LoadCleanup.Active}, saveUpgrade={PerformanceImprove.LoadCleanup.SaveUpgrade.Enabled && features.LoadCleanup.Active}, diagnostics={features.Diagnostics.Active}");
             if (diagnostics != null && diagnostics.LogPath != null)
                 GUILayout.Label("日志：" + diagnostics.LogPath + (diagnostics.LimitReached ? "（已达上限）" : ""));
             if (features.Lifecycle.Error != null) GUILayout.Label("Lifecycle: " + features.Lifecycle.Error);

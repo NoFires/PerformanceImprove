@@ -102,6 +102,12 @@ internal static class Program
             Check(!restored.SkipDuplicateLoadCleanup && !restored.LifecycleCleanup, "load-cleanup switch round-trips independently");
             Check(new Configuration().SkipDuplicateLoadCleanup, "load-cleanup switch defaults to true");
             Check(!new Configuration().SkipFirstCleanupOnSaveLoad, "save-load skip is experimental and defaults to off");
+            Check(new Configuration().SkipNoOpSaveUpgrades, "save-upgrade fast path defaults to on");
+            var upgradeConfig = new Configuration { SkipNoOpSaveUpgrades = false };
+            using (var writer = new StringWriter()) { serializer.Serialize(writer, upgradeConfig); xml = writer.ToString(); }
+            Configuration upgradeRestored;
+            using (var reader = new StringReader(xml)) upgradeRestored = (Configuration)serializer.Deserialize(reader);
+            Check(!upgradeRestored.SkipNoOpSaveUpgrades, "save-upgrade switch round-trips independently");
             var saveConfig = new Configuration { SkipFirstCleanupOnSaveLoad = false };
             using (var writer = new StringWriter()) { serializer.Serialize(writer, saveConfig); xml = writer.ToString(); }
             Configuration saveRestored;
@@ -165,6 +171,15 @@ internal static class Program
                     "LoadingProcess exposes m_CurrentLoadingProcess");
                 Check(loading != null && loading.Methods.Any(m => m.Name.String == "TickLoading" && m.ParamDefs.Count == 0),
                     "LoadingProcess.TickLoading is parameterless");
+                TypeDef upgradeSystem = module.Find("Kingmaker.EntitySystem.Persistence.Versioning.JsonUpgradeSystem", false);
+                Check(upgradeSystem != null, "JsonUpgradeSystem type is present");
+                MethodDef upgrade = upgradeSystem?.Methods.FirstOrDefault(m => m.Name.String == "Upgrade" && m.ParamDefs.Count == 3);
+                Check(upgrade != null && upgrade.IsStatic && upgrade.ReturnType.TypeName == "String",
+                    "JsonUpgradeSystem.Upgrade(SaveInfo,string,string) is a static string method");
+                Check(upgrade != null && upgrade.MethodSig.Params[0].TypeName == "SaveInfo", "Upgrade takes SaveInfo first");
+                MethodDef getUpgraders = upgradeSystem?.Methods.FirstOrDefault(m => m.Name.String == "GetUpgraders" && m.ParamDefs.Count == 2);
+                Check(getUpgraders != null && getUpgraders.IsPrivate && getUpgraders.IsStatic,
+                    "JsonUpgradeSystem.GetUpgraders(SaveInfo,string) is private static");
                 TypeDef atlas = module.Find("Kingmaker.Visual.CharacterSystem.CharacterAtlasService", false);
                 Check(atlas != null, "CharacterAtlasService type is present");
                 MethodDef update = atlas.Methods.SingleOrDefault(m => m.Name.String == "Update" && m.ParamDefs.Count == 0);
@@ -212,6 +227,33 @@ internal static class Program
             }
             finally { TextureBurst.Unload(); }
             Check(!TextureBurst.HasWindowPatch, "unload releases the loading-manager patch");
+
+            // 8. Save-upgrade fast path: attach to JsonUpgradeSystem.Upgrade and skip only provable no-ops.
+            bool saveUpgradeInstalled = SaveUpgrade.Initialize(null, true);
+            if (!saveUpgradeInstalled) Console.Error.WriteLine("SaveUpgrade.Initialize failed: " + SaveUpgrade.LastError);
+            Check(saveUpgradeInstalled, "save-upgrade fast path installs against JsonUpgradeSystem.Upgrade");
+            try
+            {
+                Check(SaveUpgrade.HasPatch, "fast path is attached to the upgrade method");
+                Check(SaveUpgrade.ShouldSkip("{\"a\":1}", true), "a file without TabletopTweaks names is skipped");
+                Check(!SaveUpgrade.ShouldSkip("{\"$type\":\"TabletopTweaks.X\"}", true), "a file that mentions TabletopTweaks is never skipped");
+                Check(!SaveUpgrade.ShouldSkip("{\"a\":1}", false), "a mixed upgrader chain is never skipped");
+                Check(!SaveUpgrade.ShouldSkip(null, true), "null JSON is never skipped");
+                Check(SaveUpgrade.IsTabletopUpgraderName("TabletopTweaks.Core.SaveUpgrades.TabletopTweaksMigration"),
+                    "the migration type is recognized by full name");
+                Check(!SaveUpgrade.IsTabletopUpgraderName("Kingmaker.EntitySystem.Persistence.Versioning.EmptyUpgrader"),
+                    "other upgraders are not the migration");
+                SaveUpgrade.Configure(false);
+                Check(!SaveUpgrade.Enabled, "the configuration switch turns the fast path off");
+                SaveUpgrade.Configure(true);
+                Check(SaveUpgrade.Enabled, "the configuration switch turns the fast path back on");
+                PerformanceImprove.LoadCleanup.Main.Toggle(false);
+                Check(!SaveUpgrade.RuntimeOn, "the master switch disables the fast path at runtime");
+                PerformanceImprove.LoadCleanup.Main.Toggle(true);
+                Check(SaveUpgrade.RuntimeOn, "the master switch re-enables the fast path at runtime");
+            }
+            finally { SaveUpgrade.Unload(); }
+            Check(!SaveUpgrade.HasPatch, "unload releases the upgrade patch");
             Console.WriteLine(checks + " checks passed");
             return 0;
         }

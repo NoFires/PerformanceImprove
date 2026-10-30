@@ -1,74 +1,55 @@
-# PerformanceImprove 0.5.1
+# PerformanceImprove 0.5.2
 
-2026-10-22，在 0.4.1 的区域加载清理之上加入**贴图图集队列加速**：加载等待期间每帧多推进几次角色图集队列，改变的是吞吐而不是结果。加上原有的升级订阅清理、眷泽城 NPC 模型按需加载、玩家已成交可堆叠卖出物品清理、普通区域切换的重复资源清理跳过（`SkipDuplicateLoadCleanup`），以及 0.4.0 的会话诊断日志与默认关闭的实验开关 `SpellbookCopyFast`。诊断日志详见 [诊断日志](diagnostics-log.md)，加载清理详见 [区域加载清理](load-cleanup.md)。
-
-UMM 标识、显示名称、文件夹与主程序集分别为 `PerformanceImprove`、`PerformanceImprove`、`Mods/PerformanceImprove/`、`PerformanceImprove.dll`；入口是 `PerformanceImprove.Main.Load`。只需一个 DLL，不依赖或分发两个旧版 DLL。诊断功能已并入本 Mod，不再需要单独的 WrathPerformanceLab。
+Pathfinder: Wrath of the Righteous 的实验性 UMM + Harmony 优化 Mod。当前面向本机 2.7.0x 程序集（Assembly-CSharp SHA256 `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`），所有功能有独立开关，诊断日志默认开启。
 
 ## 功能与开关
 
-- **Level-up subscription cleanup**：保存升级控制器遗失的订阅句柄，在原 Stop 回调完成且 Stopped=true 后释放。保持原异常、重入和通知顺序，不强制 GC。对应原 WrathLifecycleFix。
-- **Drezen NPC models on demand**：普通眷泽城延后远处非玩家 NPC 的完整模型，保留逻辑实体；接近队伍或镜头时预热。对应原 WrathDeferredNpcViews。默认广范围候选、45 米预热，可切换为四种市民的窄范围或 Profile only。
-- **自动清理已成交的可堆叠卖出物品**：在原游戏发放卖出金钱、记录成交后，仅将玩家实际卖出的、符合保护规则的可堆叠物品直接移出并释放；普通附魔装备也可以清理。商人原有同类库存保持不变，买入流程不改。详见 [商人清理规则](merchant-sale-cleanup.md)。
-- **跳过普通区域切换中重复的 UnloadUnusedAssets**（默认开）：`Game.LoadArea` 在非读档切换里连续注册两次 `UnloadUnusedAssetsCoroutine`，第二次之前没有任何新资源加载；只跳过第二次，第一次和 `UnloadAllOnEnter` 的第三次保留。读档切换（`saveInfo != null`）不跳过。2026-10-21 日志中普通切换每次两次清理约 2.8 s + 2.8 s，进眷泽城约 17.2 s；预计省约 2.8 s，未做游戏内 A/B。详见 [load-cleanup.md](load-cleanup.md)。
+- **Level-up subscription cleanup**（默认开）：保存升级控制器遗失的订阅句柄，在原 Stop 回调完成且 `Stopped=true` 后释放；不强制 GC，保持原异常、重入与通知顺序。
+- **Drezen NPC models on demand**（默认开）：普通眷泽城延后远处非玩家 NPC 的完整模型，保留逻辑实体；45 米队伍半径 + 镜头预热的按需恢复，队伍/跨场景/宠物/过场/战斗等保护。独立剧情回城地图 `83a099db95e0e6e4485a20b10ce7c28d` 被排除；普通眷泽城区域 `2570015799edf594daf2f076f2f975d8` 生效。
+- **自动清理已成交的可堆叠卖出物品**（默认开）：只处理玩家已成交、已发钱的可堆叠卖出批次；保留独特/命名、任务、钥匙/文书、非堆叠和无法确认安全的物品。**清理后无法回购**，可按需关闭。
+- **普通区域切换跳过第二次 `UnloadUnusedAssets`**（默认开）：`Game.LoadArea` 在非读档切换里连续注册两次清理，第二次之前没有任何新资源加载，只跳过第二次；读档切换保持两次。
+- **读档跳过无效果的 TabletopTweaks -117 升级**（`SkipNoOpSaveUpgrades`，默认开，2026-10-30 新增）：当某文件的升级链只有 TabletopTweaks 的 `-117` 迁移、且文件文本完全不含 `TabletopTweaks` 时，直接返回原 JSON，省掉解析、遍历、重写和每文件一次的强制 GC。详见下节。
+- **加载时加速角色贴图图集队列**（`FastTextureWait`，默认开，实验）：等待窗口内每帧多推进几次 `CharacterAtlasService.Update`；请求顺序与结果不变，DXT 积压时 Update 自行提前返回。2026-10-30 游戏内 A/B 未测出收益，见下节，可按需关闭。
+- **会话诊断日志**（默认开）：`Logs/perf-<时间>.jsonl`，记录预览复制、升级/开卡刷新、加载阶段、内存采样与已装 Mod 清单。
 
-- **会话诊断日志**：`Logs/perf-<时间>.jsonl`，记录每次预览复制（含法术书子步骤计数）、升级/开卡界面刷新耗时、加载阶段、周期内存采样和已装 Mod 清单。用于玩家把日志发给作者分析，默认开启，可在面板关闭。
+实验开关默认关：`SkipFirstCleanupOnSaveLoad`（读档跳过第一次清理，需 ≥12 GB 内存）、`SpellbookCopyFast`（预览复制跳过已学法术）。
 
-上述前四项性能开关默认开启（贴图加速默认开，读档清理跳过默认关）；诊断默认开启。卖出清理会让已清理物品无法回购；独特/命名装备、任务/钥匙/文书、非堆叠物品和不能确认安全的物品按原流程交给商人。NPC 模型功能仍保留玩家/跨场景/宠物、特殊模型、过场、指令与战斗等保护，并不保证所有 NPC 都可延迟。普通眷泽城区域为 `2570015799edf594daf2f076f2f975d8`，独立剧情回城地图 `83a099db95e0e6e4485a20b10ce7c28d` 被排除；第四章没有整章禁用。用户所述“第四章第一次进城”是否完全对应该剧情地图，仍需现场核对。
+## 2026-10-30 读档优化：跳过无效的 TabletopTweaks 迁移
 
-总开关关闭时先恢复本 Mod 待处理的 NPC 模型，再关闭订阅清理、加载清理和商人清理。模型恢复失败会拒绝关闭或卸载，并保留追踪；不能丢弃所有权后仍留着临时替身。订阅清理关闭时保留活动角色界面原有订阅；已释放的订阅不会重新建立。切换后重新打开只能捕获后续的新订阅，因此正式比较应重启游戏。
+问题：`SaveManager.LoadRoutine` 对同一 32 MB 存档（解压 152 MB JSON、497 个条目）耗时 **96.93 s**。根因不是反序列化，而是 TabletopTweaks-Core 注册的 JSON 升级器 `-117`：`WillUpgrade()` 对所有文件返回 true，`Upgrade()` 对每个文件 `JObject.Parse` → `SelectTokens("..$type")` → 正则替换 → `ToString` → `GC.Collect()`。存档在 TTT Core 未启用时保存（`Versions` 只有 `10,20,30,40,50,60`），所以每次读档都重跑；结果只写入临时 stash，不写回存档。该存档 1.52 亿字符里没有任何 `TabletopTweaks` 字样，迁移是纯空操作。
 
-如果某项因版本/IL 不匹配而初始化失败，其他项可独立工作，UMM 面板会显示错误。若所有已选择的功能均失败，则报告整个 Mod 加载失败。存在已启用或仍在打补丁的旧 WrathLifecycleFix/WrathDeferredNpcViews 时拒绝加载，避免重复改写。
+修复（0.5.2）：Harmony prefix 挂在 `JsonUpgradeSystem.Upgrade(SaveInfo, string, string)`。先用 `IndexOf("TabletopTweaks")` 快速判断；无该子串时再检查私有 `GetUpgraders` 的结果，只有“唯一升级器是 `TabletopTweaks.Core.SaveUpgrades.TabletopTweaksMigration`”时才跳过。其它升级器、混合升级链或反射失败一律回退原方法。与 Performance Fixes、WrathPatches、ModMenu 无冲突（源码核对；游戏内日志确认 `Upgrade` 的补丁 owner 只有本 Mod；ModMenu 只跳过 header.json 的 ShouldUpgrade）。
 
-## 配置、日志与迁移
+实测（同一战役内容，502 条目、153 MB JSON）：
 
-统一配置为 `Mods/PerformanceImprove/Settings.xml`，保存 LifecycleCleanup、DeferredNpcViews、MerchantSaleCleanup、Diagnostics、SkipDuplicateLoadCleanup、DiagnosticsSampleSeconds、DiagnosticsMaxMegabytes、SpellbookCopyFast 和 Npc 子设置。各功能日志在同一文件夹的 Logs 下，分别以 lifecycle-、npc-、merchant- 开头，每文件 2 MiB 上限；诊断日志为 perf-*.jsonl，默认 32 MiB 上限。商人日志写入失败或达到上限时暂停清理，物品恢复走原生售出流程；重新开关可创建新日志。内部 Harmony 所有权分别为 `PerformanceImprove.Lifecycle`、`PerformanceImprove.NpcViews`、`PerformanceImprove.Merchant`、`PerformanceImprove.Diagnostics`、`PerformanceImprove.LoadCleanup`，便于独立开关，仍只有一个 UMM 项目。
+| 场景 | 版本/开关 | LoadRoutine | 迁移次数 | 跳过 |
+| --- | --- | --- | --- | --- |
+| 真实旧档（缺 -117） | 0.5.1 | 96.93 s | 338 | 0 |
+| 合成旧档（去掉 header -117） | 0.5.2 开 | **5.09 s** | 5（含 TTT 名的文件回退） | 333 / 338 |
+| 合成旧档 | 0.5.2 关 | 102.83 s | 338 | 0 |
+| 用户当前新档（已含 -117） | 0.5.2 | 2.17 s | 0 | — |
 
-包 `dist/PerformanceImprove-0.5.1.zip` 包含 PerformanceImprove/ 下的 Info.json、PerformanceImprove.dll、README.md、merchant-sale-cleanup.md 和 load-cleanup.md。沿用现有 UMM/Harmony，不包含游戏 DLL。
+结论：受影响的旧档从约 97–103 s 降到约 5 s（约 20 倍）；已含 `-117` 的存档本来就不跑迁移，没有副作用。合成旧档中 `party.json`、DrezenCapital 的 4 个区域文件、`header.json.ModList.json` 含 TTT 类型名，按设计回退原迁移。
 
-0.4.1/0.5.0 升级到 0.5.1 仍是替换本 Mod 的同一组发行文件，保留 `Settings.xml`（`FastTextureWait` 默认 true、`TextureWaitBurst` 默认 4、`SkipFirstCleanupOnSaveLoad` 默认 false）和 `Logs/`。给别人试用时只需整个 `PerformanceImprove/` 文件夹；回退就换回旧文件夹并删除新增的配置项。
+## 2026-10-30 贴图加速修复（0.5.1）
 
-迁移脚本 `scripts/install-performance-improve.py` 和 `scripts/install-performance-improve-0.4.0.py` 是历史安装路径，不要用它们覆盖当前新版本；已有安装记录在 `analysis/installations/`。
+0.5.0 的窗口挂在 `Game.AwaitTextureCompression()` 的工厂返回值上，但加载管理器拿到的是原始迭代器 `<AwaitTextureCompression>d__267`，推进计数恒 0；给迭代器 `MoveNext` 打补丁会被运行时以 `InvalidProgramException` 拒绝。0.5.1 改为在 `LoadingProcess.TickLoading` 前后读取私有 `m_CurrentLoadingProcess`，只有当前阶段是贴图迭代器时开启窗口；不替换枚举器，阶段名与日志格式不变。
+
+游戏内结果：窗口生效（burst 4 推进 903 次、burst 8 推进 2 170 次），但 `AwaitTextureCompression` 时长开启 4.63–5.19 s、关闭 4.78–5.21 s，没有可测收益；burst 8 也不比 burst 4 快。等待更像由 DXT 压缩决定。**不要宣称该开关缩短读档时间**，可关闭以避免额外每帧调用。
+
+## 配置与日志
+
+统一配置 `Mods/PerformanceImprove/Settings.xml`：`LifecycleCleanup`、`DeferredNpcViews`、`MerchantSaleCleanup`、`Diagnostics`、`SkipDuplicateLoadCleanup`、`SkipFirstCleanupOnSaveLoad`、`SkipNoOpSaveUpgrades`、`FastTextureWait`、`TextureWaitBurst`、`DiagnosticsSampleSeconds`、`DiagnosticsMaxMegabytes`、`SpellbookCopyFast`、`Npc` 子设置。各功能日志在 `Logs/` 下，诊断日志 `perf-*.jsonl` 默认 32 MiB 上限。Harmony owner：`PerformanceImprove.Lifecycle`、`.NpcViews`、`.Merchant`、`.Diagnostics`、`.LoadCleanup`、`.LoadCleanup.SaveUpgrade`。
 
 ## 验证边界
 
-构建脚本 `scripts/build-performance-improve.ps1` 对**合并后的 PerformanceImprove.dll**运行原订阅清理 32 项、NPC 功能 51 项、整合 22 项、商人功能 40 项、诊断日志 31 项和加载清理 69 项，共 **245 项**独立检查。检查包括 `Game.LoadArea` 六参数签名与 3 个清理调用点、状态机（普通第 2 次跳过、读档默认全保留、实验开关下读档跳第 1 次、12 GB 内存门槛、状态重置）、`Game.AwaitTextureCompression` 私有 `IEnumerator` 签名与迭代器类型、`LoadingProcess.m_CurrentLoadingProcess`/`TickLoading`、`CharacterAtlasService.Update` 公共签名、窗口类型判定，以及贴图加速的纯门控规则（窗口内才推进、重入不递归、1–8 上限）。
+构建脚本对合并后的 DLL 运行 6 个套件：订阅清理 32、NPC 51、整合 22、商人 40、诊断 31、加载清理 88，共 **264 项**独立检查，含真实 Harmony、游戏 IL/签名、UniRx 路径、XML 配置、启停与卸载。没有执行真实 Unity 载入管线、全 Mod 组合、任务或剧情现场；游戏内收益只以本轮记录为准，不外推。
 
-这些检查包含真实 Harmony、游戏 IL、UniRx 取消路径、弱引用、协程、配置 XML、启停控制与日志格式，但没有执行真实 Unity 加载管线、全 Mod 组合、任务或剧情现场，也没有在游戏内跑过加载清理 A/B。独立检查通过与文件打包完成，不代表已经确认游戏内性能收益。当前游戏程序集哈希保护仍为 `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`。
+## 安装与回退
+
+退出游戏，把 `PerformanceImprove/` 整个文件夹放进 `Mods/`（覆盖旧版），保留 `Settings.xml` 与 `Logs/`。回退时换回旧文件夹并删除新增配置键即可。安装记录与回退路径在 `analysis/installations/`。
 
 ## 下一步
 
-由用户操作做加载清理 A/B：同一存档、同一路线，先关闭 `SkipDuplicateLoadCleanup` 做一次区域切换，再打开做一次；比较 `perf-*.jsonl` 中 `UnloadUnusedAssets` 次数/耗时、`LoadAreaCoroutine`、总加载时间和切换后内存。读档切换应保持两次清理，不参与该优化。若出现资源缺失或内存明显升高，关闭开关并回退。现有旧组合 48.812 秒加载记录和其他历史计时只作参考，不与本轮混用。
-
-## 给试用的玩家
-
-1. 退出游戏，把 `PerformanceImprove` 整个文件夹放进 `Pathfinder Second Adventure\Mods\`（覆盖旧版）。
-2. 启动游戏，UMM 里确认版本是 0.5.1、开关是你要试的状态。
-3. 正常玩，遇到读档/切图卡顿就照常操作即可；诊断日志会自己写到 `Mods\PerformanceImprove\Logs\perf-*.jsonl`。
-4. 想反馈问题，把最新的 `perf-*.jsonl` 发回来，并说明是否开了“贴图加速”和“读档跳过第一次清理”。
-5. 想回退：换回旧文件夹即可；`Settings.xml` 里新增的三个键可以留着或删掉。
-## 2026-10-29 发布前修复（0.5.0）
-
-贴图等待协程曾改用 Harmony postfix 包装工厂方法返回值，修复 prefix 阶段结果尚为空而无法激活窗口的实现错误；新增 5 项检查（托管协程工厂回归）。该实现后来被游戏内结果否定，见下节。
-
-## 2026-10-30 游戏内验证：0.5.0 的贴图加速没有生效，0.5.1 改用加载管理器
-
-0.5.0 安装后在同一存档（Manual_432，进入 DrezenCapital，52 个 Mod）做了三次读档对比；三个游戏进程各自全新启动：
-
-| 运行 | 版本 | FastTextureWait | LoadRoutine | LoadAreaCoroutine | AwaitTextureCompression | UMM“额外推进”计数 |
-| --- | --- | --- | --- | --- | --- | --- |
-| A | 0.5.0 | 开（未生效） | 88.23 s | 18.09 s | 5.06 s | 0 |
-| B | 0.5.0 | 关 | 92.51 s | 10.23 s | 4.78 s | — |
-| C | 0.5.0 | 开（未生效） | 87.64 s | 10.42 s | 5.16 s | 0 |
-| D | 0.5.1 | 开，burst 4 | 146.50 s | 10.06 s | 4.63 s | 903 |
-| E | 0.5.1 | 开，burst 8 | 86.35 s | 10.35 s | 5.19 s | 2 170 |
-| F | 0.5.1 | 关 | 89.64 s | 10.39 s | 5.21 s | 0 |
-
-0.5.0 的贴图等待没有变短，且计数为 0，说明窗口从未打开。证据链：
-
-- 游戏自身的 `Loading process finished '<AwaitTextureCompression>d__267'` 与诊断日志一致：加载管理器收到的仍是原始迭代器，不是包装后的枚举器；工厂方法上的 postfix 没有影响实际调用路径（该调用点很可能被内联）。
-- 单独给迭代器的 `MoveNext` 打 Harmony 补丁会让 CLR 抛 `InvalidProgramException`；用最小 Harmony 探针可离线复现，仅加 prefix 也失败，所以不能靠 MoveNext 实现窗口。
-- `LoadingProcess.TickLoading`、`StartLoadingProcess` 的补丁都能正常安装。
-
-0.5.1 改为：在 `LoadingProcess.TickLoading` 的 prefix/postfix 中读取私有字段 `m_CurrentLoadingProcess`，只有当前阶段是贴图迭代器时 `Active=true`，阶段结束或换成其它阶段立即关闭。窗口仍覆盖整个等待阶段，不替换枚举器，因此阶段名、诊断与游戏日志格式不变。新增 8 项检查（迭代器类型、加载管理器字段/方法、窗口类型判定、工厂不再被包装、Update 补丁、卸载释放），加载清理合计 69 项、全部套件 **245 项**。
-
-游戏内结果（2026-10-30 14:11–14:34，详见 [游戏内验证](runtime-ingame-20261030.md)）：0.5.1 的窗口确实打开，D 推进 903 次、E 推进 2 170 次，阶段类型名保持原始迭代器；但开启（D/E 均值 4.91 s）与关闭（B/F 均值 4.99 s）的 `AwaitTextureCompression` 时长差异落在噪声内，burst 8 也没有比 burst 4 更快。等待时间更像由 DXT 压缩本身决定，而不是每帧只处理一个请求的排队开销；**不能宣称该开关缩短读档时间**。同一存档的总加载时间主要花在 `SaveManager.LoadRoutine`（86–147 s），其次是场景（约 10–18 s）和两次资源清理（约 5.5–6.0 s）。若要缩短“读档进眷泽城”，下一步应针对 SaveManager 阶段。当前把该开关视为实验项：没有实测收益时可以关闭它以避免额外的每帧调用。
+- 读档剩余成本：本次同一存档 `LoadAreaCoroutine` 10–18 s、两次 `UnloadUnusedAssets` 各约 2.4–3.2 s、贴图等待约 5 s，主因已从 LoadRoutine 转到场景与清理。
+- 主菜单启动约 63 s，其中 Mods 约 50 s（78%）；最重的是 ToggleableThrowingWeapons 10.2 s、CustomNpcPortraits 4.4 s、TabletopTweaks-Base 3.9 s。先精简 Mod，再考虑对个别 Mod 的 Load 做定点优化；不要延迟 Mod 初始化（蓝图补丁必须先于蓝图加载）。
