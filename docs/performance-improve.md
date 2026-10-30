@@ -1,4 +1,4 @@
-# PerformanceImprove 0.5.0
+# PerformanceImprove 0.5.1
 
 2026-10-22，在 0.4.1 的区域加载清理之上加入**贴图图集队列加速**：加载等待期间每帧多推进几次角色图集队列，改变的是吞吐而不是结果。加上原有的升级订阅清理、眷泽城 NPC 模型按需加载、玩家已成交可堆叠卖出物品清理、普通区域切换的重复资源清理跳过（`SkipDuplicateLoadCleanup`），以及 0.4.0 的会话诊断日志与默认关闭的实验开关 `SpellbookCopyFast`。诊断日志详见 [诊断日志](diagnostics-log.md)，加载清理详见 [区域加载清理](load-cleanup.md)。
 
@@ -23,15 +23,15 @@ UMM 标识、显示名称、文件夹与主程序集分别为 `PerformanceImprov
 
 统一配置为 `Mods/PerformanceImprove/Settings.xml`，保存 LifecycleCleanup、DeferredNpcViews、MerchantSaleCleanup、Diagnostics、SkipDuplicateLoadCleanup、DiagnosticsSampleSeconds、DiagnosticsMaxMegabytes、SpellbookCopyFast 和 Npc 子设置。各功能日志在同一文件夹的 Logs 下，分别以 lifecycle-、npc-、merchant- 开头，每文件 2 MiB 上限；诊断日志为 perf-*.jsonl，默认 32 MiB 上限。商人日志写入失败或达到上限时暂停清理，物品恢复走原生售出流程；重新开关可创建新日志。内部 Harmony 所有权分别为 `PerformanceImprove.Lifecycle`、`PerformanceImprove.NpcViews`、`PerformanceImprove.Merchant`、`PerformanceImprove.Diagnostics`、`PerformanceImprove.LoadCleanup`，便于独立开关，仍只有一个 UMM 项目。
 
-包 `dist/PerformanceImprove-0.5.0.zip` 包含 PerformanceImprove/ 下的 Info.json、PerformanceImprove.dll、README.md、merchant-sale-cleanup.md 和 load-cleanup.md。沿用现有 UMM/Harmony，不包含游戏 DLL。
+包 `dist/PerformanceImprove-0.5.1.zip` 包含 PerformanceImprove/ 下的 Info.json、PerformanceImprove.dll、README.md、merchant-sale-cleanup.md 和 load-cleanup.md。沿用现有 UMM/Harmony，不包含游戏 DLL。
 
-0.4.1 升级到 0.5.0 仍是替换本 Mod 的同一组发行文件，保留 `Settings.xml`（新增 `FastTextureWait` 默认 true、`TextureWaitBurst` 默认 4、`SkipFirstCleanupOnSaveLoad` 默认 false）和 `Logs/`。给别人试用时只需整个 `PerformanceImprove/` 文件夹；回退就换回旧文件夹并删除新增的配置项。
+0.4.1/0.5.0 升级到 0.5.1 仍是替换本 Mod 的同一组发行文件，保留 `Settings.xml`（`FastTextureWait` 默认 true、`TextureWaitBurst` 默认 4、`SkipFirstCleanupOnSaveLoad` 默认 false）和 `Logs/`。给别人试用时只需整个 `PerformanceImprove/` 文件夹；回退就换回旧文件夹并删除新增的配置项。
 
 迁移脚本 `scripts/install-performance-improve.py` 和 `scripts/install-performance-improve-0.4.0.py` 是历史安装路径，不要用它们覆盖当前新版本；已有安装记录在 `analysis/installations/`。
 
 ## 验证边界
 
-构建脚本 `scripts/build-performance-improve.ps1` 对**合并后的 PerformanceImprove.dll**运行原订阅清理 32 项、NPC 功能 51 项、整合 22 项、商人功能 40 项、诊断日志 31 项和加载清理 61 项，共 **237 项**独立检查。新增检查包括 `Game.LoadArea` 六参数签名与 3 个清理调用点、状态机（普通第 2 次跳过、读档默认全保留、实验开关下读档跳第 1 次、12 GB 内存门槛、状态重置）、`Game.AwaitTextureCompression` 的私有 `IEnumerator` 签名、`CharacterAtlasService.Update` 公共签名，以及贴图加速的纯门控规则（窗口内才推进、重入不递归、1–8 上限）。
+构建脚本 `scripts/build-performance-improve.ps1` 对**合并后的 PerformanceImprove.dll**运行原订阅清理 32 项、NPC 功能 51 项、整合 22 项、商人功能 40 项、诊断日志 31 项和加载清理 69 项，共 **245 项**独立检查。检查包括 `Game.LoadArea` 六参数签名与 3 个清理调用点、状态机（普通第 2 次跳过、读档默认全保留、实验开关下读档跳第 1 次、12 GB 内存门槛、状态重置）、`Game.AwaitTextureCompression` 私有 `IEnumerator` 签名与迭代器类型、`LoadingProcess.m_CurrentLoadingProcess`/`TickLoading`、`CharacterAtlasService.Update` 公共签名、窗口类型判定，以及贴图加速的纯门控规则（窗口内才推进、重入不递归、1–8 上限）。
 
 这些检查包含真实 Harmony、游戏 IL、UniRx 取消路径、弱引用、协程、配置 XML、启停控制与日志格式，但没有执行真实 Unity 加载管线、全 Mod 组合、任务或剧情现场，也没有在游戏内跑过加载清理 A/B。独立检查通过与文件打包完成，不代表已经确认游戏内性能收益。当前游戏程序集哈希保护仍为 `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`。
 
@@ -42,10 +42,33 @@ UMM 标识、显示名称、文件夹与主程序集分别为 `PerformanceImprov
 ## 给试用的玩家
 
 1. 退出游戏，把 `PerformanceImprove` 整个文件夹放进 `Pathfinder Second Adventure\Mods\`（覆盖旧版）。
-2. 启动游戏，UMM 里确认版本是 0.5.0、开关是你要试的状态。
+2. 启动游戏，UMM 里确认版本是 0.5.1、开关是你要试的状态。
 3. 正常玩，遇到读档/切图卡顿就照常操作即可；诊断日志会自己写到 `Mods\PerformanceImprove\Logs\perf-*.jsonl`。
 4. 想反馈问题，把最新的 `perf-*.jsonl` 发回来，并说明是否开了“贴图加速”和“读档跳过第一次清理”。
 5. 想回退：换回旧文件夹即可；`Settings.xml` 里新增的三个键可以留着或删掉。
-## 2026-10-29 发布前修复
+## 2026-10-29 发布前修复（0.5.0）
 
-贴图等待协程改用 Harmony postfix 包装原方法返回值，修复 prefix 阶段结果尚为空而未激活加速窗口的问题。新增五项检查，使用实际生产注册在托管协程工厂上复现旧问题并验证修复、yield 保留、正常结束及提前释放。237 项检查通过，仍需真实游戏加载 A/B。
+贴图等待协程曾改用 Harmony postfix 包装工厂方法返回值，修复 prefix 阶段结果尚为空而无法激活窗口的实现错误；新增 5 项检查（托管协程工厂回归）。该实现后来被游戏内结果否定，见下节。
+
+## 2026-10-30 游戏内验证：0.5.0 的贴图加速没有生效，0.5.1 改用加载管理器
+
+0.5.0 安装后在同一存档（Manual_432，进入 DrezenCapital，52 个 Mod）做了三次读档对比；三个游戏进程各自全新启动：
+
+| 运行 | 版本 | FastTextureWait | LoadRoutine | LoadAreaCoroutine | AwaitTextureCompression | UMM“额外推进”计数 |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | 0.5.0 | 开（未生效） | 88.23 s | 18.09 s | 5.06 s | 0 |
+| B | 0.5.0 | 关 | 92.51 s | 10.23 s | 4.78 s | — |
+| C | 0.5.0 | 开（未生效） | 87.64 s | 10.42 s | 5.16 s | 0 |
+| D | 0.5.1 | 开，burst 4 | 146.50 s | 10.06 s | 4.63 s | 903 |
+| E | 0.5.1 | 开，burst 8 | 86.35 s | 10.35 s | 5.19 s | 2 170 |
+| F | 0.5.1 | 关 | 89.64 s | 10.39 s | 5.21 s | 0 |
+
+0.5.0 的贴图等待没有变短，且计数为 0，说明窗口从未打开。证据链：
+
+- 游戏自身的 `Loading process finished '<AwaitTextureCompression>d__267'` 与诊断日志一致：加载管理器收到的仍是原始迭代器，不是包装后的枚举器；工厂方法上的 postfix 没有影响实际调用路径（该调用点很可能被内联）。
+- 单独给迭代器的 `MoveNext` 打 Harmony 补丁会让 CLR 抛 `InvalidProgramException`；用最小 Harmony 探针可离线复现，仅加 prefix 也失败，所以不能靠 MoveNext 实现窗口。
+- `LoadingProcess.TickLoading`、`StartLoadingProcess` 的补丁都能正常安装。
+
+0.5.1 改为：在 `LoadingProcess.TickLoading` 的 prefix/postfix 中读取私有字段 `m_CurrentLoadingProcess`，只有当前阶段是贴图迭代器时 `Active=true`，阶段结束或换成其它阶段立即关闭。窗口仍覆盖整个等待阶段，不替换枚举器，因此阶段名、诊断与游戏日志格式不变。新增 8 项检查（迭代器类型、加载管理器字段/方法、窗口类型判定、工厂不再被包装、Update 补丁、卸载释放），加载清理合计 69 项、全部套件 **245 项**。
+
+游戏内结果（2026-10-30 14:11–14:34，详见 [游戏内验证](runtime-ingame-20261030.md)）：0.5.1 的窗口确实打开，D 推进 903 次、E 推进 2 170 次，阶段类型名保持原始迭代器；但开启（D/E 均值 4.91 s）与关闭（B/F 均值 4.99 s）的 `AwaitTextureCompression` 时长差异落在噪声内，burst 8 也没有比 burst 4 更快。等待时间更像由 DXT 压缩本身决定，而不是每帧只处理一个请求的排队开销；**不能宣称该开关缩短读档时间**。同一存档的总加载时间主要花在 `SaveManager.LoadRoutine`（86–147 s），其次是场景（约 10–18 s）和两次资源清理（约 5.5–6.0 s）。若要缩短“读档进眷泽城”，下一步应针对 SaveManager 阶段。当前把该开关视为实验项：没有实测收益时可以关闭它以避免额外的每帧调用。

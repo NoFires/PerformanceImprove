@@ -18,13 +18,6 @@ internal static class Program
         Console.WriteLine("PASS " + name);
     }
 
-    private static readonly object textureMarker = new object();
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static System.Collections.IEnumerator TextureWait() => TextureWaitBody();
-    private static System.Collections.IEnumerator TextureWaitBody()
-    {
-        yield return textureMarker;
-    }
     private static int Main()
     {
         try
@@ -164,6 +157,14 @@ internal static class Program
                 MethodDef await = game.Methods.SingleOrDefault(m => m.Name.String == "AwaitTextureCompression" && m.ParamDefs.Count == 0);
                 Check(await != null && await.IsPrivate, "Game.AwaitTextureCompression is a private parameterless method");
                 Check(await.ReturnType.TypeName == "IEnumerator", "AwaitTextureCompression returns the non-generic IEnumerator");
+                TypeDef iterator = game.NestedTypes.FirstOrDefault(t => t.Name.String.StartsWith("<AwaitTextureCompression>"));
+                Check(iterator != null, "Game has the AwaitTextureCompression iterator state machine");
+                Check(iterator != null && iterator.Interfaces.Any(i => i.Interface.TypeName == "IEnumerator"), "the iterator implements IEnumerator");
+                TypeDef loading = module.Find("Kingmaker.EntitySystem.Persistence.LoadingProcess", false);
+                Check(loading != null && loading.Fields.Any(f => f.Name.String == "m_CurrentLoadingProcess"),
+                    "LoadingProcess exposes m_CurrentLoadingProcess");
+                Check(loading != null && loading.Methods.Any(m => m.Name.String == "TickLoading" && m.ParamDefs.Count == 0),
+                    "LoadingProcess.TickLoading is parameterless");
                 TypeDef atlas = module.Find("Kingmaker.Visual.CharacterSystem.CharacterAtlasService", false);
                 Check(atlas != null, "CharacterAtlasService type is present");
                 MethodDef update = atlas.Methods.SingleOrDefault(m => m.Name.String == "Update" && m.ParamDefs.Count == 0);
@@ -184,32 +185,33 @@ internal static class Program
             using (var reader = new StringReader(xml)) burstRestored = (Configuration)serializer.Deserialize(reader);
             Check(!burstRestored.FastTextureWait && burstRestored.TextureWaitBurst == 6, "texture burst settings round-trip independently");
 
-            // Exercise the production Harmony registration on a managed coroutine factory.
-            Check(TextureBurst.Initialize(null, true, 4), "texture patches install against the game methods");
+            // 2026-10-30 in-game run: a postfix on the factory never changed the returned enumerator
+            // (the stage stayed <AwaitTextureCompression>d__267 and the pumped counter stayed 0), and the
+            // iterator's MoveNext cannot be patched (Harmony alone reproduces InvalidProgramException).
+            // The window therefore follows the loading manager: TickLoading + m_CurrentLoadingProcess.
+            // No wrapper is inserted, so the stage type in the game log and diagnostics stays unchanged.
+            bool textureInstalled = TextureBurst.Initialize(null, true, 4);
+            if (!textureInstalled) Console.Error.WriteLine("TextureBurst.Initialize failed: " + TextureBurst.LastError);
+            Check(textureInstalled, "texture patches install against the loading manager");
             try
             {
-                var target = HarmonyLib.AccessTools.Method(typeof(Kingmaker.Game), "AwaitTextureCompression", Type.EmptyTypes);
-                var patches = HarmonyLib.Harmony.GetPatchInfo(target);
-                var testHarmony = new HarmonyLib.Harmony("PerformanceImprove.TextureBurst.Regression");
-                var factory = typeof(Program).GetMethod(nameof(TextureWait), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                foreach (var patch in patches.Prefixes.Where(p => p.owner == TextureBurst.Owner))
-                    testHarmony.Patch(factory, prefix: new HarmonyLib.HarmonyMethod(patch.PatchMethod));
-                foreach (var patch in patches.Postfixes.Where(p => p.owner == TextureBurst.Owner))
-                    testHarmony.Patch(factory, postfix: new HarmonyLib.HarmonyMethod(patch.PatchMethod));
-                try
-                {
-                    var wait = TextureWait();
-                    Check(!TextureBurst.Active, "factory creation leaves burst inactive until iteration");
-                    Check(wait.MoveNext() && TextureBurst.Active && ReferenceEquals(wait.Current, textureMarker), "registered patch activates burst and preserves the original yield");
-                    Check(!wait.MoveNext() && !TextureBurst.Active, "normal coroutine completion clears the burst window");
-                    wait = TextureWait();
-                    wait.MoveNext();
-                    ((IDisposable)wait).Dispose();
-                    Check(!TextureBurst.Active, "early coroutine disposal clears the burst window");
-                }
-                finally { testHarmony.UnpatchAll(testHarmony.Id); }
+                Check(TextureBurst.HasWindowPatch, "burst window is attached to LoadingProcess.TickLoading");
+                Check(TextureBurst.IteratorType != null && TextureBurst.IteratorType.Name.StartsWith("<AwaitTextureCompression>"),
+                    "window recognizes the game's texture iterator type");
+                Check(TextureBurst.IsWindowProcess(TextureBurst.IteratorType), "the texture iterator opens the wait window");
+                Check(!TextureBurst.IsWindowProcess(typeof(string)), "other loading stages never open the wait window");
+                Check(!TextureBurst.IsWindowProcess(null), "no current stage means no window");
+                var factory = HarmonyLib.AccessTools.Method(typeof(Kingmaker.Game), "AwaitTextureCompression", Type.EmptyTypes);
+                var factoryInfo = HarmonyLib.Harmony.GetPatchInfo(factory);
+                bool factoryPatched = factoryInfo != null &&
+                    (factoryInfo.Prefixes.Any(p => p.owner == TextureBurst.Owner) || factoryInfo.Postfixes.Any(p => p.owner == TextureBurst.Owner));
+                Check(!factoryPatched, "the factory return value is no longer wrapped");
+                var atlasUpdate = HarmonyLib.AccessTools.Method(typeof(Kingmaker.Visual.CharacterSystem.CharacterAtlasService), "Update", Type.EmptyTypes);
+                var atlasInfo = HarmonyLib.Harmony.GetPatchInfo(atlasUpdate);
+                Check(atlasInfo != null && atlasInfo.Postfixes.Any(p => p.owner == TextureBurst.Owner), "CharacterAtlasService.Update is patched");
             }
             finally { TextureBurst.Unload(); }
+            Check(!TextureBurst.HasWindowPatch, "unload releases the loading-manager patch");
             Console.WriteLine(checks + " checks passed");
             return 0;
         }

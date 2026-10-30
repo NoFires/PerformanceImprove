@@ -1,6 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net481</TargetFramework><LangVersion>latest</LangVersion><Version>0.5.0</Version>
+    <TargetFramework>net481</TargetFramework><LangVersion>latest</LangVersion><Version>0.5.1</Version>
     <Managed>D:\SteamLibrary\steamapps\common\Pathfinder Second Adventure\Wrath_Data\Managed</Managed>
     <RestorePackagesPath>E:\Program\Caches\NuGet\packages</RestorePackagesPath>
     <RestoreSources>https://api.nuget.org/v3/index.json</RestoreSources><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
@@ -20,4 +20,5 @@
     <Reference Include="Owlcat.Runtime.Core"><HintPath>$(Managed)\Owlcat.Runtime.Core.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>
+
 
