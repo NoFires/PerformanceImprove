@@ -73,3 +73,23 @@
 1. 实现 Phase 1 探针（0.5.3，只读），跑一次真实进图/出图，拿到 `LoadAreaCoroutine` 内部拆分。
 2. 根据数据决定：#1/#2 是否值得默认开启、#4 是否推广、#5/#6 是否有明确收益。
 3. 每项改动单独 A/B，通过后再进默认配置。
+
+## 8. 2026-10-31 首个实测：DLC2 存档重载（0.5.2，GameLogFull 阶段）
+
+TTW 被放弃后（40 个存档引用了它，加载会失败），改用不含 TTW 的 `DLC2` 存档（只读副本 `TEST DLC2`，区域 `DLC2_ApproachesToTheTavern`）。在游戏内 Esc → 载入游戏 → 同一存档，触发完整“出图 + 进图”：
+
+| 阶段 | 耗时 |
+| --- | ---: |
+| UnloadAreaCoroutine（卸场景） | 0.400 s |
+| UnloadEntitiesCoroutine（销毁实体） | 0.017 s |
+| UnloadUnusedAssets 第 1 次 | 3.264 s |
+| LoadRoutine（读档，1.9 MB 小档） | 0.162 s |
+| UnloadUnusedAssets 第 2 次 | 3.017 s |
+| LoadAreaCoroutine（场景+实体+视图） | 2.137 s |
+| MatchTimeOfDayCoroutine | 1.371 s |
+| AwaitTextureCompression ×2 | 1.028 + 0.050 s |
+| 总计（Loading is ended） | **12.62 s** |
+
+结论：即使是很小的 DLC2 区域，**两次 UnloadUnusedAssets 占 6.28 s（约 50%）**，是当前最值得动的通用项；`LoadAreaCoroutine` 只占 2.1 s。对普通切换（无读档），本 Mod 已默认跳过第 2 次清理（预计省 ~3 s，仍缺 A/B）；对读档进入，实验开关 `SkipFirstCleanupOnSaveLoad` 可跳过第 1 次（预计省 ~3.2 s，需验证内存峰值）。
+
+本轮同时发现：当前游戏进程的诊断 `perf-*.jsonl` 为 0 字节（同一份 0.5.2 DLL 在上一进程正常）。下一轮先修这个，再装 0.5.3 探针取 `LoadAreaCoroutine` 内部拆分，并做清理开关的 A/B。
