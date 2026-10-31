@@ -1,5 +1,8 @@
 using System;
 using HarmonyLib;
+using Kingmaker;
+using Kingmaker.Blueprints.Area;
+using Kingmaker.EntitySystem.Persistence;
 using UnityEngine;
 using UnityModManagerNet;
 using Lifecycle = WrathLifecycleFix.Main;
@@ -25,6 +28,8 @@ namespace PerformanceImprove
         public int DiagnosticsMaxMegabytes = 32;
         // Experiment: skip re-adding spells the preview unit already knows. Off until A/B proves it.
         public bool SpellbookCopyFast = false;
+        // Test hook: F11 reloads the current area as a normal transition (saveInfo null) for A/B.
+        public bool DebugReloadAreaKey = false;
         public WrathDeferredNpcViews.Settings Npc = new WrathDeferredNpcViews.Settings();
         public override void Save(UnityModManager.ModEntry entry) => Save(this, entry);
     }
@@ -66,7 +71,12 @@ namespace PerformanceImprove
                     throw new InvalidOperationException("No selected performance feature could initialize");
                 entry.OnToggle = Toggle;
                 entry.OnUnload = _ => features.Unload();
-                entry.OnUpdate = (_, delta) => features.Tick(delta);
+                entry.OnUpdate = (_, delta) =>
+                {
+                    features.Tick(delta);
+                    if (configuration.DebugReloadAreaKey && Input.GetKeyDown(KeyCode.F11))
+                        ReloadCurrentArea();
+                };
                 entry.OnGUI = GUI;
                 entry.OnSaveGUI = e => configuration.Save(e);
                 ReportErrors();
@@ -79,6 +89,25 @@ namespace PerformanceImprove
                 entry.Logger.LogException(ex); return false;
             }
         }
+        private static void ReloadCurrentArea()
+        {
+            try
+            {
+                Game game = Game.Instance;
+                BlueprintArea area = game?.CurrentlyLoadedArea;
+                if (area == null) { entry?.Logger.Log("Debug reload: no currently loaded area."); return; }
+                System.Reflection.MethodInfo load = AccessTools.Method(typeof(Game), "LoadArea",
+                    new[] { typeof(BlueprintArea), typeof(BlueprintAreaEnterPoint), typeof(AutoSaveMode), typeof(bool), typeof(SaveInfo), typeof(Action) });
+                if (load == null) { entry?.Logger.Log("Debug reload: LoadArea method not found."); return; }
+                entry?.Logger.Log("Debug reload: reloading " + area.AssetGuidThreadSafe + " as a normal transition (no save).");
+                load.Invoke(game, new object[] { area, null, AutoSaveMode.None, false, null, null });
+            }
+            catch (Exception ex)
+            {
+                entry?.Logger.LogException(ex);
+            }
+        }
+
         private static bool Toggle(UnityModManager.ModEntry _, bool value)
         {
             bool result = value ? features.Enable(configuration.LifecycleCleanup, configuration.DeferredNpcViews, configuration.MerchantSaleCleanup, configuration.Diagnostics, configuration.SkipDuplicateLoadCleanup) : features.Disable();
@@ -109,6 +138,8 @@ namespace PerformanceImprove
             if (skipSave != configuration.SkipFirstCleanupOnSaveLoad) { configuration.SkipFirstCleanupOnSaveLoad = skipSave; LoadFeature.Configure(skipSave); }
             bool skipUpgrade = GUILayout.Toggle(configuration.SkipNoOpSaveUpgrades, "读档时跳过无效果的 TabletopTweaks 存档升级（内容不含该类型名时）");
             if (skipUpgrade != configuration.SkipNoOpSaveUpgrades) { configuration.SkipNoOpSaveUpgrades = skipUpgrade; LoadFeature.ConfigureSaveUpgrade(skipUpgrade); }
+            bool debugReload = GUILayout.Toggle(configuration.DebugReloadAreaKey, "测试：F11 把当前区域当普通切换重新加载（不存档，用于 A/B）");
+            if (debugReload != configuration.DebugReloadAreaKey) configuration.DebugReloadAreaKey = debugReload;
             GUILayout.Label("普通切换跳第二次清理；贴图加速只在加载等待期间生效。");
             GUILayout.Label($"已跳过清理：普通 {LoadFeature.Skipped} 次 / 读档 {LoadFeature.SkippedSaveLoad} 次；贴图队列额外推进 {LoadFeature.PumpedTextures} 次；跳过无效存档升级 {LoadFeature.SkippedUpgradeFiles} 个文件 / {LoadFeature.SkippedUpgradeMegabytes} MB");
             bool merchant = GUILayout.Toggle(configuration.MerchantSaleCleanup, "自动清理已成交的可堆叠卖出物品（保留独特装备和任务道具）");

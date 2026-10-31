@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net481</TargetFramework><LangVersion>latest</LangVersion><Version>0.5.3</Version>
     <Managed>D:\SteamLibrary\steamapps\common\Pathfinder Second Adventure\Wrath_Data\Managed</Managed>
@@ -15,6 +15,7 @@
     <Reference Include="UnityModManager"><HintPath>$(Managed)\UnityModManager\UnityModManager.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(Managed)\UnityModManager\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(Managed)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(Managed)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(Managed)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(Managed)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Owlcat.Runtime.Core"><HintPath>$(Managed)\Owlcat.Runtime.Core.dll</HintPath><Private>false</Private></Reference>
