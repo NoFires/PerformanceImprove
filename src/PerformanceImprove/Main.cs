@@ -30,6 +30,8 @@ namespace PerformanceImprove
         public bool SpellbookCopyFast = false;
         // Test hook: F11 reloads the current area as a normal transition (saveInfo null) for A/B.
         public bool DebugReloadAreaKey = false;
+        // Old saves: skip inactive-enchantment dispose actions instead of aborting the load.
+        public bool LegacySaveEnchantmentTolerance = true;
         public WrathDeferredNpcViews.Settings Npc = new WrathDeferredNpcViews.Settings();
         public override void Save(UnityModManager.ModEntry entry) => Save(this, entry);
     }
@@ -56,6 +58,7 @@ namespace PerformanceImprove
                 LoadFeature.Configure(configuration.SkipFirstCleanupOnSaveLoad);
                 LoadFeature.ConfigureTexture(configuration.FastTextureWait, configuration.TextureWaitBurst);
                 LoadFeature.ConfigureSaveUpgrade(configuration.SkipNoOpSaveUpgrades);
+                LoadFeature.ConfigureLegacyTolerance(configuration.LegacySaveEnchantmentTolerance);
                 diagnostics = new Diagnostics.ProbeHost(entry, configuration.DiagnosticsSampleSeconds, configuration.DiagnosticsMaxMegabytes)
                 { SkipKnownReadd = configuration.SpellbookCopyFast };
                 features = new FeatureGroup(
@@ -140,8 +143,10 @@ namespace PerformanceImprove
             if (skipUpgrade != configuration.SkipNoOpSaveUpgrades) { configuration.SkipNoOpSaveUpgrades = skipUpgrade; LoadFeature.ConfigureSaveUpgrade(skipUpgrade); }
             bool debugReload = GUILayout.Toggle(configuration.DebugReloadAreaKey, "测试：F11 把当前区域当普通切换重新加载（不存档，用于 A/B）");
             if (debugReload != configuration.DebugReloadAreaKey) configuration.DebugReloadAreaKey = debugReload;
+            bool legacyTolerance = GUILayout.Toggle(configuration.LegacySaveEnchantmentTolerance, "旧存档容错：附魔上下文为空时跳过其 Dispose 动作，避免读档中断");
+            if (legacyTolerance != configuration.LegacySaveEnchantmentTolerance) { configuration.LegacySaveEnchantmentTolerance = legacyTolerance; LoadFeature.ConfigureLegacyTolerance(legacyTolerance); }
             GUILayout.Label("普通切换跳第二次清理；贴图加速只在加载等待期间生效。");
-            GUILayout.Label($"已跳过清理：普通 {LoadFeature.Skipped} 次 / 读档 {LoadFeature.SkippedSaveLoad} 次；贴图队列额外推进 {LoadFeature.PumpedTextures} 次；跳过无效存档升级 {LoadFeature.SkippedUpgradeFiles} 个文件 / {LoadFeature.SkippedUpgradeMegabytes} MB");
+            GUILayout.Label($"已跳过清理：普通 {LoadFeature.Skipped} 次 / 读档 {LoadFeature.SkippedSaveLoad} 次；贴图队列额外推进 {LoadFeature.PumpedTextures} 次；跳过无效存档升级 {LoadFeature.SkippedUpgradeFiles} 个文件 / {LoadFeature.SkippedUpgradeMegabytes} MB；旧存档附魔容错 {LoadFeature.SuppressedLegacyEnchantments} 次");
             bool merchant = GUILayout.Toggle(configuration.MerchantSaleCleanup, "自动清理已成交的可堆叠卖出物品（保留独特装备和任务道具）");
             if (merchant != configuration.MerchantSaleCleanup && (!features.Enabled || features.Merchant.Set(merchant))) configuration.MerchantSaleCleanup = merchant;
             GUILayout.Label("清理后无法回购；商人原有库存、非堆叠物品和无法确认的物品保持原样。");

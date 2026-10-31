@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -75,6 +75,8 @@ namespace PerformanceImprove.LoadCleanup
                     entry?.Logger.Log("Texture wait burst could not be installed; cleanup skip keeps working.");
                 if (!SaveUpgrade.Initialize(entry, SaveUpgrade.Enabled))
                     entry?.Logger.Log("Save-upgrade fast path could not be installed; other features keep working.");
+                if (!LegacyEnchantmentTolerance.Initialize(entry, LegacyEnchantmentTolerance.Enabled))
+                    entry?.Logger.Log("Legacy enchantment tolerance could not be installed; other features keep working.");
                 entry?.Logger.Log("Area-load cleanup skip enabled: redundant UnloadUnusedAssets passes are skipped (save-load first pass only on >= " + SaveLoadSkipMinimumMemoryMb + " MB).");
                 return true;
             }
@@ -93,6 +95,7 @@ namespace PerformanceImprove.LoadCleanup
             enabled = value;
             TextureBurst.RuntimeOn = value;
             SaveUpgrade.RuntimeOn = value;
+            LegacyEnchantmentTolerance.RuntimeOn = value;
             if (!value) State.End();
             return true;
         }
@@ -107,9 +110,15 @@ namespace PerformanceImprove.LoadCleanup
             return SaveUpgrade.Configure(enabled);
         }
 
+        internal static bool ConfigureLegacyTolerance(bool enabled)
+        {
+            return LegacyEnchantmentTolerance.Configure(enabled);
+        }
+
         internal static long PumpedTextures => TextureBurst.Pumped;
         internal static long SkippedUpgradeFiles => SaveUpgrade.SkippedFiles;
         internal static long SkippedUpgradeMegabytes => SaveUpgrade.SkippedChars / (1024 * 1024);
+        internal static long SuppressedLegacyEnchantments => LegacyEnchantmentTolerance.Suppressed;
 
         internal static bool Configure(bool skipFirstOnSaveLoad)
         {
@@ -128,6 +137,7 @@ namespace PerformanceImprove.LoadCleanup
             enabled = false;
             TextureBurst.Unload();
             SaveUpgrade.Unload();
+            LegacyEnchantmentTolerance.Unload();
             State.End();
             harmony?.UnpatchAll(Owner);
             harmony = null;
