@@ -184,6 +184,12 @@ internal static class Program
                 Check(atlas != null, "CharacterAtlasService type is present");
                 MethodDef update = atlas.Methods.SingleOrDefault(m => m.Name.String == "Update" && m.ParamDefs.Count == 0);
                 Check(update != null && update.IsPublic, "CharacterAtlasService.Update is public and parameterless");
+                TypeDef cleanupIterator = game.NestedTypes.FirstOrDefault(t => t.Name.String.StartsWith("<UnloadUnusedAssetsCoroutine>"));
+                Check(cleanupIterator != null, "Game has the UnloadUnusedAssetsCoroutine iterator state machine");
+                Check(cleanupIterator != null && cleanupIterator.Interfaces.Any(i => i.Interface.TypeName == "IEnumerator"),
+                    "the cleanup iterator implements IEnumerator");
+                MethodDef startLoading = loading.Methods.FirstOrDefault(m => m.Name.String == "StartLoadingProcess" && m.ParamDefs.Count == 4);
+                Check(startLoading != null && startLoading.IsPublic, "LoadingProcess.StartLoadingProcess has the 4-parameter overload");
             }
             Check(BurstPolicy.ClampBurst(0) == 1 && BurstPolicy.ClampBurst(1) == 1, "burst lower bound is one update per frame");
             Check(BurstPolicy.ClampBurst(9) == 8 && BurstPolicy.ClampBurst(4) == 4, "burst upper bound is eight updates per frame");
@@ -254,6 +260,36 @@ internal static class Program
             }
             finally { SaveUpgrade.Unload(); }
             Check(!SaveUpgrade.HasPatch, "unload releases the upgrade patch");
+
+            // 9. Cleanup skip is attached where the loading manager receives each process: the
+            // coroutine factory is inlined into LoadArea in the shipping build (2026-10-31: the
+            // prefix on UnloadUnusedAssetsCoroutine never fired and both cleanups always ran).
+            bool cleanupInstalled = PerformanceImprove.LoadCleanup.Main.Initialize(null);
+            if (!cleanupInstalled) Console.Error.WriteLine("LoadCleanup.Main.Initialize failed offline");
+            Check(cleanupInstalled, "load-cleanup patches install offline");
+            try
+            {
+                var cleanupType = typeof(Kingmaker.Game)
+                    .GetNestedTypes(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                    .FirstOrDefault(t => t.Name.StartsWith("<UnloadUnusedAssetsCoroutine>") && typeof(System.Collections.IEnumerator).IsAssignableFrom(t));
+                Check(cleanupType != null, "the cleanup iterator type is discoverable");
+                Check(PerformanceImprove.LoadCleanup.Main.IsCleanupProcess(cleanupType),
+                    "the cleanup iterator is recognized as the skip target");
+                Check(!PerformanceImprove.LoadCleanup.Main.IsCleanupProcess(typeof(string)),
+                    "other loading processes are not skipped");
+                var loadingProcessType = HarmonyLib.AccessTools.TypeByName("Kingmaker.EntitySystem.Persistence.LoadingProcess");
+                var start = loadingProcessType
+                    .GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                    .FirstOrDefault(m => m.Name == "StartLoadingProcess" && m.GetParameters().Length == 4);
+                var startInfo = HarmonyLib.Harmony.GetPatchInfo(start);
+                Check(startInfo != null && startInfo.Prefixes.Any(p => p.owner == "PerformanceImprove.LoadCleanup"),
+                    "the skip prefix is attached to StartLoadingProcess");
+                var prefix = typeof(PerformanceImprove.LoadCleanup.Main)
+                    .GetMethod("StartProcessPrefix", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                Check(prefix != null && prefix.GetParameters().Length == 1 && prefix.GetParameters()[0].ParameterType.IsByRef,
+                    "StartProcessPrefix replaces the process enum by reference");
+            }
+            finally { PerformanceImprove.LoadCleanup.Main.Unload(); }
             Console.WriteLine(checks + " checks passed");
             return 0;
         }

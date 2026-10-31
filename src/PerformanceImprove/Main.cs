@@ -70,7 +70,7 @@ namespace PerformanceImprove
                 entry.OnGUI = GUI;
                 entry.OnSaveGUI = e => configuration.Save(e);
                 ReportErrors();
-                entry.Logger.Log("PerformanceImprove 0.5.2: lifecycle cleanup, deferred NPC views, stackable player sale cleanup, area-load cleanup skip, save-upgrade fast path, session diagnostics.");
+                entry.Logger.Log("PerformanceImprove 0.5.3: lifecycle cleanup, deferred NPC views, stackable player sale cleanup, area-load cleanup skip, save-upgrade fast path, session diagnostics.");
                 return true;
             }
             catch (Exception ex)
@@ -96,7 +96,7 @@ namespace PerformanceImprove
         }
         private static void GUI(UnityModManager.ModEntry _)
         {
-            GUILayout.Label("PerformanceImprove 0.5.2 — experimental; restart for a clean comparison.");
+            GUILayout.Label("PerformanceImprove 0.5.3 — experimental; restart for a clean comparison.");
             bool lifecycle = GUILayout.Toggle(configuration.LifecycleCleanup, "Level-up subscription cleanup");
             if (lifecycle != configuration.LifecycleCleanup && (!features.Enabled || features.Lifecycle.Set(lifecycle))) configuration.LifecycleCleanup = lifecycle;
             bool npc = GUILayout.Toggle(configuration.DeferredNpcViews, "Drezen NPC models on demand");

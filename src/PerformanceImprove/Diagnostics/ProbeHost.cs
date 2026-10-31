@@ -78,6 +78,8 @@ namespace PerformanceImprove.Diagnostics
                 instance = this;
                 WriteSession();
                 InstallProbes();
+                if (sink != null && sink.Bytes == 0)
+                    entry?.Logger.Log("Diagnostics sink wrote 0 bytes; failure: " + sink.Failure);
                 enabled = true;
                 nextSample = 0;
                 return true;
@@ -295,7 +297,11 @@ namespace PerformanceImprove.Diagnostics
             Probe("Kingmaker.UI.MVVM._VM.ServiceWindows.CharacterInfo.CharacterInfoVM", ".ctor", "CreateVMs", "DisposeImplementation");
             Probe("Kingmaker.EntitySystem.Persistence.AreaDataStash", "UnstashAreaState", "StashAreaState");
             Probe("Kingmaker.EntitySystem.Persistence.Scenes.SceneLoader", "MatchStateWithScene", "LoadSceneEntities");
-            Probe("Kingmaker.Blueprints.ResourcesLibrary", "CleanupLoadedCache");
+            Probe("Kingmaker.EntitySystem.Persistence.AreaPersistentState", "PostLoad", "TurnOn");
+            Probe("Kingmaker.EntitySystem.SceneEntitiesState", "PostLoad", "TurnOn");
+            Probe("Kingmaker.ResourceLinks.ResourcesPreload", "PreloadUnitViews", "PreloadMapObjectViews");
+            Probe("Kingmaker.Sound.SoundBanksManager", "LoadBanks", "MarkBanksToUnload", "UnloadNotUsed", "TryToUnloadBanks");
+            Probe("Kingmaker.Blueprints.ResourcesLibrary", "CleanupLoadedCache", "StartPreloadingMode", "StopPreloadingMode");
             Probe("Kingmaker.BundlesLoading.BundlesLoadService", "RequestBundle");
 
             PatchSpecial(typeof(UnitHelper), "CopySpellbook", "CopySpellbookPrefix", "CopySpellbookFinalizer");

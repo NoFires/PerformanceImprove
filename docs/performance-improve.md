@@ -1,4 +1,4 @@
-# PerformanceImprove 0.5.2
+# PerformanceImprove 0.5.3
 
 Pathfinder: Wrath of the Righteous 的实验性 UMM + Harmony 优化 Mod。当前面向本机 2.7.0x 程序集（Assembly-CSharp SHA256 `2cb7160b7154d4ffacc77b9c51b1eb26199e1294300f04fdfc073367b2ef8953`），所有功能有独立开关，诊断日志默认开启。
 
@@ -43,7 +43,23 @@ Pathfinder: Wrath of the Righteous 的实验性 UMM + Harmony 优化 Mod。当�
 
 ## 验证边界
 
-构建脚本对合并后的 DLL 运行 6 个套件：订阅清理 32、NPC 51、整合 22、商人 40、诊断 31、加载清理 88，共 **264 项**独立检查，含真实 Harmony、游戏 IL/签名、UniRx 路径、XML 配置、启停与卸载。没有执行真实 Unity 载入管线、全 Mod 组合、任务或剧情现场；游戏内收益只以本轮记录为准，不外推。
+构建脚本对合并后的 DLL 运行 6 个套件：订阅清理 32、NPC 51、整合 22、商人 40、诊断 31、加载清理 97，共 **273 项**独立检查，含真实 Harmony、游戏 IL/签名、UniRx 路径、XML 配置、启停与卸载。没有执行真实 Unity 载入管线、全 Mod 组合、任务或剧情现场；游戏内收益只以本轮记录为准，不外推。
+
+## 2026-10-31 清理跳过修复（0.5.3）
+
+发现此前两个版本的 `UnloadUnusedAssets` 跳过从未生效：跳过补丁挂在 `Game.UnloadUnusedAssetsCoroutine()` 的工厂返回值上，而该调用点在正式版里被内联，前缀根本不会执行。游戏日志一直显示两次真实的清理（约 2.4–3.3 s × 2），UMM 计数恒为 0。
+
+0.5.3 改为在加载管理器接收阶段拦截：对 `LoadingProcess.StartLoadingProcess(IEnumerator, Action, LoadingProcessTag, Func<IDisposable>)` 加前缀，当“当前 LoadArea 注册的清理次数”正好是要跳过的那一次、且传入的是 `Game+<UnloadUnusedAssetsCoroutine>d__*` 迭代器时，换成一个空迭代器。类型判定保证不会误伤其它加载阶段；工厂前缀保留作后备。
+
+游戏内验证（DLC2 存档，同一区域 `DLC2_ApproachesToTheTavern`）：
+
+| 项 | 0.5.2（两次清理） | 0.5.3（跳过第 1 次） |
+| --- | ---: | ---: |
+| 第 1 次清理 | 3.264 s | **0.003 s（空迭代器）** |
+| 第 2 次清理 | 3.017 s | 2.449–2.556 s |
+| 同进程第二次读档总时长 | 12.62 s | **7.85 s** |
+
+说明：新进程内的首次读档会叠加约 10 s 的 `MatchTimeOfDayCoroutine`（冷启动/探针），总时长会到 21–22 s，与跳过无关；同一次启动内的后续读档回落到 1.3 s 左右。跳过第 1 次清理会把内存释放推后到第 2 次，峰值内存影响仍在测量中。
 
 ## 安装与回退
 

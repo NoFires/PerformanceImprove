@@ -13,7 +13,7 @@ namespace PerformanceImprove.Diagnostics
     internal sealed class LogSink : IDisposable
     {
         private readonly object gate = new object();
-        private readonly StreamWriter writer;
+        private StreamWriter writer;
         private readonly long maxBytes;
         private long bytes;
         private bool closed;
@@ -31,7 +31,13 @@ namespace PerformanceImprove.Diagnostics
             this.maxBytes = Math.Max(1024, maxBytes);
             string directory = System.IO.Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            writer = new StreamWriter(path, false, new UTF8Encoding(false)) { AutoFlush = true };
+            writer = Open(path);
+        }
+
+        private static StreamWriter Open(string path)
+        {
+            var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+            return new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
         }
 
         internal void Write(double elapsedSeconds, string kind, params object[] pairs)
@@ -43,23 +49,40 @@ namespace PerformanceImprove.Diagnostics
                 if (closed || LimitReached) return;
                 try
                 {
-                    long size = Encoding.UTF8.GetByteCount(line) + 1;
-                    if (bytes + size > maxBytes)
-                    {
-                        LimitReached = true;
-                        writer.Flush();
-                        return;
-                    }
-                    writer.WriteLine(line);
-                    bytes += size;
-                    Records++;
+                    WriteCore(line);
                 }
                 catch (Exception ex)
                 {
                     Failure = ex;
-                    LimitReached = true;
+                    // One reopen attempt: a transient share/AV lock on the freshly created file
+                    // must not silently disable the whole session.
+                    try
+                    {
+                        writer.Dispose();
+                        writer = Open(Path);
+                        WriteCore(line);
+                    }
+                    catch (Exception retry)
+                    {
+                        Failure = retry;
+                        LimitReached = true;
+                    }
                 }
             }
+        }
+
+        private void WriteCore(string line)
+        {
+            long size = Encoding.UTF8.GetByteCount(line) + 1;
+            if (bytes + size > maxBytes)
+            {
+                LimitReached = true;
+                writer.Flush();
+                return;
+            }
+            writer.WriteLine(line);
+            bytes += size;
+            Records++;
         }
 
         internal static string Format(double elapsedSeconds, string kind, params object[] pairs)

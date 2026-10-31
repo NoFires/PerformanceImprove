@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -34,6 +34,7 @@ namespace PerformanceImprove.LoadCleanup
         private static Harmony harmony;
         private static bool enabled;
         private static volatile bool skipSaveLoadFirst;
+        private static Type cleanupIteratorType;
         internal static long Skipped;
         internal static long SkippedSaveLoad;
 
@@ -48,6 +49,18 @@ namespace PerformanceImprove.LoadCleanup
                 MethodInfo unload = AccessTools.Method(typeof(Game), "UnloadUnusedAssetsCoroutine", Type.EmptyTypes);
                 if (unload == null || unload.ReturnType != typeof(IEnumerator<object>))
                     throw new MissingMethodException("Kingmaker.Game.UnloadUnusedAssetsCoroutine(): IEnumerator<object>");
+                // The factory call is inlined into LoadArea in the shipping build (the prefix below never
+                // fires), so the skip is also applied where the loading manager receives each process.
+                Type loadingType = AccessTools.TypeByName("Kingmaker.EntitySystem.Persistence.LoadingProcess");
+                if (loadingType == null)
+                    throw new TypeLoadException("Kingmaker.EntitySystem.Persistence.LoadingProcess");
+                MethodInfo start = AccessTools.Method(loadingType, "StartLoadingProcess",
+                    new[] { typeof(IEnumerator), typeof(Action), typeof(LoadingProcessTag), typeof(Func<IDisposable>) });
+                if (start == null)
+                    throw new MissingMethodException(loadingType.FullName + ".StartLoadingProcess(IEnumerator, Action, LoadingProcessTag, Func<IDisposable>)");
+                cleanupIteratorType = FindCleanupIteratorType();
+                if (cleanupIteratorType == null)
+                    throw new MissingMethodException("Kingmaker.Game+<UnloadUnusedAssetsCoroutine>d__*");
 
                 harmony = new Harmony(Owner);
                 harmony.Patch(loadArea,
@@ -55,12 +68,14 @@ namespace PerformanceImprove.LoadCleanup
                     postfix: new HarmonyMethod(typeof(Main), nameof(LoadAreaPostfix)) { priority = Priority.Last });
                 harmony.Patch(unload,
                     prefix: new HarmonyMethod(typeof(Main), nameof(UnloadPrefix)) { priority = Priority.First });
+                harmony.Patch(start,
+                    prefix: new HarmonyMethod(typeof(Main), nameof(StartProcessPrefix)) { priority = Priority.First });
                 enabled = true;
                 if (!TextureBurst.Initialize(entry, TextureBurst.Enabled, TextureBurst.Burst))
                     entry?.Logger.Log("Texture wait burst could not be installed; cleanup skip keeps working.");
                 if (!SaveUpgrade.Initialize(entry, SaveUpgrade.Enabled))
                     entry?.Logger.Log("Save-upgrade fast path could not be installed; other features keep working.");
-                entry.Logger.Log("Area-load cleanup skip enabled: redundant UnloadUnusedAssets passes are skipped (save-load first pass only on >= " + SaveLoadSkipMinimumMemoryMb + " MB).");
+                entry?.Logger.Log("Area-load cleanup skip enabled: redundant UnloadUnusedAssets passes are skipped (save-load first pass only on >= " + SaveLoadSkipMinimumMemoryMb + " MB).");
                 return true;
             }
             catch (Exception ex)
@@ -153,6 +168,42 @@ namespace PerformanceImprove.LoadCleanup
             return false;
         }
 
+        private static Type FindCleanupIteratorType()
+        {
+            foreach (Type nested in typeof(Game).GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (nested.Name.StartsWith("<UnloadUnusedAssetsCoroutine>", StringComparison.Ordinal) &&
+                    typeof(IEnumerator).IsAssignableFrom(nested))
+                    return nested;
+            }
+            return null;
+        }
+
+        internal static bool IsCleanupProcess(Type type)
+        {
+            return type != null && cleanupIteratorType != null && type == cleanupIteratorType;
+        }
+
+        // The cleanup coroutine factory is inlined into LoadArea in the shipping build, so the
+        // prefix on UnloadUnusedAssetsCoroutine never runs. Take the process back here instead:
+        // the loading manager receives exactly one process per registered cleanup.
+        private static void StartProcessPrefix(ref IEnumerator process)
+        {
+            if (!enabled || process == null) return;
+            if (!IsCleanupProcess(process.GetType())) return;
+            if (!State.ShouldSkip()) return;
+            bool saveLoad = State.SkippedIndex == 1;
+            if (saveLoad) SkippedSaveLoad++; else Skipped++;
+            try
+            {
+                entry?.Logger.Log("Skipped a redundant UnloadUnusedAssets via StartLoadingProcess ("
+                    + (saveLoad ? "save-load first pass" : "normal transition second pass")
+                    + ", total " + (Skipped + SkippedSaveLoad) + ").");
+            }
+            catch { }
+            process = Empty();
+        }
+
         private static IEnumerator<object> Empty()
         {
             yield break;
@@ -192,6 +243,8 @@ namespace PerformanceImprove.LoadCleanup
             SkippedIndex = 0;
         }
 
+
+
         internal static bool ShouldSkip()
         {
             if (!tracking || skipIndex == 0) return false;
@@ -202,3 +255,4 @@ namespace PerformanceImprove.LoadCleanup
         }
     }
 }
+
